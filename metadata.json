@@ -1,0 +1,8 @@
+{
+  "name": "AlkaTara Nexus",
+  "description": "A multi-agent AI platform for Alkatara clients featuring a dedicated team of specialist agents, shared knowledge base, and secure chat.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
