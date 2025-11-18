@@ -1,3 +1,4 @@
+
 import { initializeApp, getApps, FirebaseApp } from 'firebase/app';
 import { 
   getAuth, 
@@ -9,12 +10,14 @@ import {
   sendPasswordResetEmail,
   signOut, 
   onAuthStateChanged, 
-  User 
+  User,
+  setPersistence,
+  browserLocalPersistence
 } from 'firebase/auth';
 import { getFirestore, Firestore } from 'firebase/firestore';
 import React from 'react';
 
-// Access globals safely without augmenting Window interface globally to prevent type shadowing
+// Access globals safely
 const win = window as any;
 const firebaseConfig = win.__firebase_config || {
   apiKey: process.env.FIREBASE_API_KEY || "mock-key",
@@ -30,26 +33,64 @@ let auth: Auth;
 let db: Firestore;
 
 // Simple check to see if we are in a real firebase environment or need to mock
-export const isMock = firebaseConfig.apiKey === "mock-key";
+export const isMock = firebaseConfig.apiKey === "mock-key" || !firebaseConfig.apiKey;
 
 if (!getApps().length && !isMock) {
-  app = initializeApp(firebaseConfig);
-  auth = getAuth(app);
-  db = getFirestore(app);
+  try {
+    app = initializeApp(firebaseConfig);
+    auth = getAuth(app);
+    db = getFirestore(app);
+    // Ensure persistence is set to local (default, but explicit is safer)
+    setPersistence(auth, browserLocalPersistence).catch((error) => {
+        console.error("Firebase persistence error:", error);
+    });
+  } catch (e) {
+    console.error("Firebase Initialization Error:", e);
+    console.warn("Falling back to Mock Mode due to configuration error.");
+    // @ts-ignore
+    exports.isMock = true;
+  }
 } else if (isMock) {
-    console.warn("Running in Mock Firebase Mode");
+    console.warn("Running in Mock Firebase Mode - No API Keys Detected");
 }
 
 export { auth, db };
 
-// Event Emitter for Mock Auth updates to avoid page reloads
+// Event Emitter for Mock Auth updates
 const mockAuthEvent = new EventTarget();
+
+// --- SECURE MOCK IMPLEMENTATION ---
+// This simulates a real database in localStorage so you can't just "log in with anything"
+const MOCK_DB_KEY = 'alkatara_secure_mock_users';
+
+const getMockUsers = (): Record<string, any> => {
+    try {
+        return JSON.parse(localStorage.getItem(MOCK_DB_KEY) || '{}');
+    } catch { return {}; }
+};
+
+const saveMockUser = (email: string, data: any) => {
+    const users = getMockUsers();
+    users[email.toLowerCase()] = data;
+    localStorage.setItem(MOCK_DB_KEY, JSON.stringify(users));
+};
 
 export const signInWithGoogle = async () => {
     if (isMock) {
-        // Simulation for demo purposes if no firebase keys provided
-        const mockUser: any = { uid: 'test-user-google', email: 'ceo@alkatara.com', displayName: 'AlkaTara CEO' };
-        localStorage.setItem('mockUser', JSON.stringify(mockUser));
+        console.log("Simulating Google Sign In...");
+        await new Promise(resolve => setTimeout(resolve, 1000)); // Fake network delay
+        
+        // In mock mode, we auto-create a google user profile
+        const email = "demo-google@alkatara.com";
+        const mockUser = { 
+            uid: 'google-user-' + Date.now(), 
+            email: email, 
+            displayName: 'Google User (Demo)',
+            photoURL: 'https://lh3.googleusercontent.com/a/default-user',
+            providerId: 'google.com'
+        };
+        
+        localStorage.setItem('mockCurrentUser', JSON.stringify(mockUser));
         mockAuthEvent.dispatchEvent(new Event('auth-change'));
         return;
     }
@@ -64,8 +105,30 @@ export const signInWithGoogle = async () => {
 
 export const signUpEmail = async (email: string, password: string) => {
     if (isMock) {
-        const mockUser: any = { uid: 'test-user-' + Date.now(), email: email, displayName: email.split('@')[0] };
-        localStorage.setItem('mockUser', JSON.stringify(mockUser));
+        await new Promise(resolve => setTimeout(resolve, 800)); // Fake delay
+        const users = getMockUsers();
+        if (users[email.toLowerCase()]) {
+            const error: any = new Error("Email already in use");
+            error.code = 'auth/email-already-in-use';
+            throw error;
+        }
+        
+        // Save user "securely" (simple hash simulation)
+        const newUser = {
+            uid: 'user-' + Math.random().toString(36).substr(2, 9),
+            email,
+            displayName: email.split('@')[0],
+            passwordHash: btoa(password), // Simple encoding for demo (NOT REAL ENCRYPTION)
+            createdAt: Date.now()
+        };
+        saveMockUser(email, newUser);
+        
+        // Auto login after signup
+        localStorage.setItem('mockCurrentUser', JSON.stringify({
+            uid: newUser.uid,
+            email: newUser.email,
+            displayName: newUser.displayName
+        }));
         mockAuthEvent.dispatchEvent(new Event('auth-change'));
         return;
     }
@@ -79,9 +142,28 @@ export const signUpEmail = async (email: string, password: string) => {
 
 export const logInEmail = async (email: string, password: string) => {
     if (isMock) {
-        // Allow any mock login
-        const mockUser: any = { uid: 'test-user-' + email, email: email, displayName: email.split('@')[0] };
-        localStorage.setItem('mockUser', JSON.stringify(mockUser));
+        await new Promise(resolve => setTimeout(resolve, 800));
+        const users = getMockUsers();
+        const user = users[email.toLowerCase()];
+        
+        if (!user) {
+            const error: any = new Error("User not found");
+            error.code = 'auth/user-not-found';
+            throw error;
+        }
+
+        if (user.passwordHash !== btoa(password)) {
+            const error: any = new Error("Wrong password");
+            error.code = 'auth/wrong-password';
+            throw error;
+        }
+
+        // Success
+        localStorage.setItem('mockCurrentUser', JSON.stringify({
+            uid: user.uid,
+            email: user.email,
+            displayName: user.displayName
+        }));
         mockAuthEvent.dispatchEvent(new Event('auth-change'));
         return;
     }
@@ -95,6 +177,13 @@ export const logInEmail = async (email: string, password: string) => {
 
 export const resetPassword = async (email: string) => {
     if (isMock) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+        const users = getMockUsers();
+        if (!users[email.toLowerCase()]) {
+             const error: any = new Error("User not found");
+             error.code = 'auth/user-not-found';
+             throw error;
+        }
         console.log(`Mock password reset sent to ${email}`);
         return;
     }
@@ -108,7 +197,7 @@ export const resetPassword = async (email: string) => {
 
 export const logOut = async () => {
     if (isMock) {
-        localStorage.removeItem('mockUser');
+        localStorage.removeItem('mockCurrentUser');
         mockAuthEvent.dispatchEvent(new Event('auth-change'));
         return;
     }
@@ -119,20 +208,20 @@ export const logOut = async () => {
     }
 };
 
-// Mock Auth Hook helper
+// Auth Hook
 export const useAuth = () => {
     const [user, setUser] = React.useState<User | null>(null);
     const [loading, setLoading] = React.useState(true);
 
     React.useEffect(() => {
         const checkMockUser = () => {
-            const stored = localStorage.getItem('mockUser');
+            const stored = localStorage.getItem('mockCurrentUser');
             if (stored) {
                 try {
                     setUser(JSON.parse(stored));
                 } catch (e) {
                     console.error("Failed to parse mock user", e);
-                    localStorage.removeItem('mockUser');
+                    localStorage.removeItem('mockCurrentUser');
                     setUser(null);
                 }
             } else {
@@ -142,14 +231,11 @@ export const useAuth = () => {
         };
 
         if (isMock) {
-            checkMockUser(); // Initial check
-            
-            // Listen for custom events for mock auth
+            checkMockUser();
             const handler = () => checkMockUser();
             mockAuthEvent.addEventListener('auth-change', handler);
             return () => mockAuthEvent.removeEventListener('auth-change', handler);
         } else {
-            // Safe check if auth is initialized
             if (!auth) {
                  setLoading(false);
                  return;
