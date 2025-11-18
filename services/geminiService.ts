@@ -2,8 +2,6 @@
 import { GoogleGenAI, Content, Part, Tool, Type, GenerateContentResponse } from "@google/genai";
 import { Agent, Message, KnowledgeItem, GroundingMetadata, ChartData, Directive, EmailDraft, CalendarEvent } from "../types";
 
-const apiKey = process.env.API_KEY || ''; 
-const ai = new GoogleGenAI({ apiKey });
 const MAX_HISTORY_LENGTH = 30;
 
 const formatHistory = (messages: Message[]): Content[] => {
@@ -74,7 +72,9 @@ export const generateAgentResponse = async (
   userDirectives: Directive[] = [],
   modelName: string = 'gemini-2.5-flash'
 ): Promise<AgentResponse> => {
-  if (!apiKey) return { text: "Error: API Key missing." };
+  if (!process.env.API_KEY) return { text: "Error: API Key is missing. Please check your configuration." };
+
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
   // Prepare Knowledge Base Context
   const kbContext = knowledgeBase.length > 0 
@@ -244,13 +244,14 @@ export const generateAgentResponse = async (
     console.error("Gemini API Error:", error);
     const errorMessage = error.message?.includes('timed out') 
         ? "I apologize, but my thought process timed out. Please ask again." 
-        : `I encountered an error processing your request (${error.status || 'Unknown'}). Please try again.`;
+        : `I encountered an error processing your request (${error.status || error.message || 'Unknown'}). Please try again.`;
     return { text: errorMessage };
   }
 };
 
 export const autoFormatKnowledge = async (rawText: string): Promise<{ title: string, category: string, content: string } | null> => {
-    if (!apiKey) return null;
+    if (!process.env.API_KEY) return null;
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const prompt = `Format as KB entry. RAW: "${rawText}"`;
     try {
         const response = (await retryWithBackoff(() => ai.models.generateContent({
@@ -274,7 +275,8 @@ export const autoFormatKnowledge = async (rawText: string): Promise<{ title: str
 };
 
 export const analyzeFile = async (base64Data: string, mimeType: string): Promise<{ title: string, summary: string, category: string } | null> => {
-    if (!apiKey) return null;
+    if (!process.env.API_KEY) return null;
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const prompt = `Analyze for AlkaTara. Identify type, summarize, categorize (STRATEGY, KPI, LEGAL, PRODUCT, OTHER).`;
     try {
         const response = (await retryWithBackoff(() => ai.models.generateContent({

@@ -11,6 +11,7 @@ import HowToUseModal from './components/HowToUseModal';
 import CanvasPanel from './components/CanvasPanel';
 import DirectivesModal from './components/DirectivesModal';
 import AnalyticsDashboard from './components/AnalyticsDashboard';
+import FocusGroupModal from './components/FocusGroupModal';
 import { generateAgentResponse } from './services/geminiService';
 import { INITIAL_AGENTS } from './constants';
 import { Agent, Message, ChatMode, Attachment, KnowledgeItem, Task, TaskStatus, Folder, CanvasDocument, ChatSession, Directive } from './types';
@@ -54,6 +55,7 @@ const App: React.FC = () => {
   const [isHowToUseOpen, setIsHowToUseOpen] = useState(false); 
   const [isDirectivesOpen, setIsDirectivesOpen] = useState(false);
   const [isAnalyticsOpen, setIsAnalyticsOpen] = useState(false);
+  const [isFocusGroupModalOpen, setIsFocusGroupModalOpen] = useState(false);
   const [editingAgent, setEditingAgent] = useState<Agent | null>(null);
   
   // Model Selection (Default: Flash)
@@ -81,9 +83,10 @@ const App: React.FC = () => {
     const u = user.uid;
     const un1 = listenToAgents(u, (data) => {
         setAgents(data);
+        // Ensure we maintain a valid selection if agents change
         setSelectedAgentIds(prev => {
              const valid = prev.filter(id => data.find(a => a.id === id));
-             return valid.length ? valid : (data[0] ? [data[0].id] : []);
+             return valid.length ? valid : (data[0] ? [data[0].id] : [INITIAL_AGENTS[0].id]);
         });
     });
     const un2 = listenToKnowledgeBase(u, setKnowledgeBase);
@@ -91,33 +94,78 @@ const App: React.FC = () => {
     const un4 = listenToTasks(u, setTasks);
     const un5 = listenToUserSessions(u, (data) => {
         setSessions(data);
-        if (!currentSessionId && data.length > 0) setCurrentSessionId(data[0].id);
-        else if (!currentSessionId) handleCreateSession(ChatMode.INDIVIDUAL);
+        // Robust session initialization - wait for data
     });
     const un6 = listenToDirectives(u, setDirectives);
 
     return () => { un1(); un2(); un3(); un4(); un5(); un6(); };
   }, [user]);
 
+  // Separate effect for session initialization to prevent race conditions
+  useEffect(() => {
+      if (!user || currentSessionId || sessions.length > 0) return;
+      // Only create a new session if we have loaded sessions and there are none
+      // We rely on the session listener to trigger this check once data is loaded
+      // However, we need to be careful not to trigger this before data is loaded.
+      // In this simplified app, listenToUserSessions returns [] immediately if empty.
+      
+      // Check if we have initialized? We can assume if agents are loaded, we are somewhat ready.
+      if (sessions.length === 0) {
+           handleCreateSession(ChatMode.INDIVIDUAL);
+      }
+  }, [sessions, user]);
+  
+  useEffect(() => {
+      if (!currentSessionId && sessions.length > 0) {
+          setCurrentSessionId(sessions[0].id);
+      }
+  }, [sessions, currentSessionId]);
+
   // Load messages for current session
   useEffect(() => {
     if (!user || !currentSessionId) return;
+    // Optimistic updates handled in handleSendMessage, but we clear on session switch
+    // Only clear if switching to a DIFFERENT session to avoid flash
     setMessages([]); 
     const unsub = listenToMessages(user.uid, currentSessionId, setMessages);
-    // Restore mode from session
-    const session = sessions.find(s => s.id === currentSessionId);
-    if (session) {
-        setChatMode(session.mode);
-        setSelectedAgentIds(session.participantIds.length ? session.participantIds : [INITIAL_AGENTS[0].id]);
-    }
     return () => unsub();
-  }, [user, currentSessionId, sessions]);
+  }, [user, currentSessionId]);
+
+  // Separate effect to update mode when session changes
+  useEffect(() => {
+      if (!currentSessionId || sessions.length === 0) return;
+      const session = sessions.find(s => s.id === currentSessionId);
+      if (session) {
+          setChatMode(prev => prev !== session.mode ? session.mode : prev);
+          setSelectedAgentIds(prev => {
+             const newIds = session.participantIds.length ? session.participantIds : [INITIAL_AGENTS[0].id];
+             return JSON.stringify(prev) !== JSON.stringify(newIds) ? newIds : prev;
+          });
+      }
+  }, [currentSessionId, sessions]);
 
   const handleCreateSession = async (mode: ChatMode) => {
       if (!user) return;
+      
+      if (mode === ChatMode.FOCUS_GROUP) {
+          setIsFocusGroupModalOpen(true);
+          return;
+      }
+
       const newId = generateId();
-      const title = `New ${mode === ChatMode.INDIVIDUAL ? 'Chat' : mode === ChatMode.FOCUS_GROUP ? 'Focus Group' : 'Board Meeting'} ${new Date().toLocaleTimeString()}`;
-      const initialParticipants = mode === ChatMode.WHOLE_SUITE ? agents.map(a=>a.id) : [agents[0].id];
+      const title = `New ${mode === ChatMode.INDIVIDUAL ? 'Chat' : 'Board Meeting'} ${new Date().toLocaleTimeString()}`;
+      
+      // CRITICAL FIX: Fallback to INITIAL_AGENTS if state is empty to prevent crash
+      let availableAgents = agents.length > 0 ? agents : INITIAL_AGENTS;
+      // Extra safety check
+      if (!availableAgents || availableAgents.length === 0) {
+          console.warn("No agents available, using fallback.");
+          availableAgents = INITIAL_AGENTS; 
+      }
+
+      const initialParticipants = mode === ChatMode.WHOLE_SUITE 
+        ? availableAgents.map(a => a.id) 
+        : [availableAgents[0]?.id || 'cto']; // Safe fallback
       
       await createNewSession(user.uid, {
           id: newId,
@@ -135,6 +183,28 @@ const App: React.FC = () => {
       setIsMobileMenuOpen(false);
   };
 
+  const handleCreateFocusGroup = async (name: string, participantIds: string[]) => {
+      if (!user) return;
+      const newId = generateId();
+      
+      await createNewSession(user.uid, {
+          id: newId,
+          userId: user.uid,
+          title: name,
+          mode: ChatMode.FOCUS_GROUP,
+          participantIds: participantIds,
+          createdAt: Date.now(),
+          lastMessageAt: Date.now()
+      });
+      
+      setCurrentSessionId(newId);
+      setChatMode(ChatMode.FOCUS_GROUP);
+      setSelectedAgentIds(participantIds);
+      setViewMode('CHAT');
+      setIsMobileMenuOpen(false);
+      setIsFocusGroupModalOpen(false);
+  };
+
   const handleSendMessage = async (text: string, attachments: Attachment[]) => {
     if (!user || !currentSessionId) return;
     
@@ -150,18 +220,29 @@ const App: React.FC = () => {
       content: text, timestamp: Date.now(), isUser: true, attachments
     };
 
+    // Optimistic UI Update
+    setMessages(prev => [...prev, userMsg]);
+
+    // Persist user message
     await addMessage(user.uid, currentSessionId, userMsg);
     if (isHuddle) setIsHuddle(true); 
 
     // Mentions: Filter agents if @Name is used
-    let targetAgents = agents.filter(a => selectedAgentIds.includes(a.id));
+    // Use current agents state, fallback to INITIAL if empty
+    const currentAgents = agents.length > 0 ? agents : INITIAL_AGENTS;
+    let targetAgents = currentAgents.filter(a => selectedAgentIds.includes(a.id));
+    
     const mentions = text.match(/@(\w+)/g);
     if (mentions) {
         const mentionedNames = mentions.map(m => m.substring(1).toLowerCase());
-        const mentionedAgents = agents.filter(a => mentionedNames.some(n => a.name.toLowerCase().includes(n) || a.surname.toLowerCase().includes(n) || a.role.toLowerCase().includes(n)));
+        const mentionedAgents = currentAgents.filter(a => mentionedNames.some(n => a.name.toLowerCase().includes(n) || a.surname.toLowerCase().includes(n) || a.role.toLowerCase().includes(n)));
         if (mentionedAgents.length > 0) targetAgents = mentionedAgents;
     }
+    
+    // Safety fallback
+    if (targetAgents.length === 0) targetAgents = [currentAgents[0]];
 
+    // Create a temporary history to send to AI, including the just-sent user message
     const currentHistory = [...messages, userMsg];
     abortControllerRef.current = new AbortController();
 
@@ -178,7 +259,7 @@ const App: React.FC = () => {
                 const result = await generateAgentResponse(
                   agent, targetAgents, currentHistory, knowledgeBase, 
                   contextInstruction, isDevilsAdvocate, isDeepResearch, canvasDoc?.content,
-                  directives, selectedModel // Pass model choice
+                  directives, selectedModel
                 );
                 
                 if (result.canvasUpdate) {
@@ -258,12 +339,15 @@ const App: React.FC = () => {
   if (loading) return <div className="h-screen bg-white dark:bg-avallen-900 flex items-center justify-center text-gray-900 dark:text-white transition-colors duration-300">Loading...</div>;
   if (!user) return <Auth />;
 
-  const activeAgents = agents.filter(a => selectedAgentIds.includes(a.id));
+  const activeAgents = agents.length > 0 
+     ? agents.filter(a => selectedAgentIds.includes(a.id)) 
+     : INITIAL_AGENTS.filter(a => selectedAgentIds.includes(a.id));
 
   return (
     <div className="flex h-screen bg-white dark:bg-avallen-900 overflow-hidden font-sans transition-colors duration-300">
       <Sidebar 
-        agents={agents} selectedAgents={selectedAgentIds} chatMode={chatMode} viewMode={viewMode}
+        agents={agents.length ? agents : INITIAL_AGENTS} 
+        selectedAgents={selectedAgentIds} chatMode={chatMode} viewMode={viewMode}
         sessions={sessions} currentSessionId={currentSessionId || ''} isMobileOpen={isMobileMenuOpen}
         onCloseMobile={() => setIsMobileMenuOpen(false)}
         onSelectAgent={(id) => {
@@ -297,7 +381,7 @@ const App: React.FC = () => {
                     />
                 ) : (
                     <KanbanBoard 
-                        tasks={tasks} agents={agents}
+                        tasks={tasks} agents={agents.length ? agents : INITIAL_AGENTS}
                         onUpdateTask={(t) => user && updateTask(user.uid, t)}
                         onDeleteTask={(id) => user && deleteTask(user.uid, id)}
                     />
@@ -325,7 +409,13 @@ const App: React.FC = () => {
         onClose={() => setIsAnalyticsOpen(false)} 
         tasks={tasks} 
         sessions={sessions} 
-        agents={agents} 
+        agents={agents.length ? agents : INITIAL_AGENTS} 
+      />
+      <FocusGroupModal 
+        isOpen={isFocusGroupModalOpen}
+        onClose={() => setIsFocusGroupModalOpen(false)}
+        agents={agents.length ? agents : INITIAL_AGENTS}
+        onCreate={handleCreateFocusGroup}
       />
     </div>
   );

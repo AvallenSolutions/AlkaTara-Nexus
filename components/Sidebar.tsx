@@ -111,14 +111,32 @@ const Sidebar: React.FC<SidebarProps> = ({
         {viewMode === 'CHAT' && (
         <>
         <div className="mb-6">
-             <button 
-                onClick={() => onCreateSession(chatMode)}
-                className="w-full bg-avallen-accent/10 hover:bg-avallen-accent/20 text-avallen-accent dark:text-sky-400 border border-avallen-accent/20 dark:border-sky-500/30 rounded-lg py-2 text-xs font-bold flex items-center justify-center gap-2 mb-4 transition-colors"
+          <h3 className="text-[10px] font-bold text-gray-400 dark:text-slate-500 uppercase tracking-wider mb-2">New Chat Mode</h3>
+          <div className="space-y-1">
+            <button 
+              onClick={() => onCreateSession(ChatMode.INDIVIDUAL)}
+              className={`w-full text-left px-3 py-2 rounded flex items-center gap-3 transition-colors ${chatMode === ChatMode.INDIVIDUAL ? 'bg-gray-100 dark:bg-avallen-700 text-avallen-accent' : 'text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-avallen-700/50'}`}
             >
-                <i className="fa-solid fa-plus"></i> New Chat
+              <i className="fa-solid fa-user text-xs w-4"></i>
+              <span className="text-sm font-medium">Individual</span>
             </button>
+            <button 
+              onClick={() => onCreateSession(ChatMode.FOCUS_GROUP)}
+              className={`w-full text-left px-3 py-2 rounded flex items-center gap-3 transition-colors ${chatMode === ChatMode.FOCUS_GROUP ? 'bg-gray-100 dark:bg-avallen-700 text-avallen-accent' : 'text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-avallen-700/50'}`}
+            >
+              <i className="fa-solid fa-users text-xs w-4"></i>
+              <span className="text-sm font-medium">Focus Group</span>
+            </button>
+            <button 
+              onClick={() => onCreateSession(ChatMode.WHOLE_SUITE)}
+              className={`w-full text-left px-3 py-2 rounded flex items-center gap-3 transition-colors ${chatMode === ChatMode.WHOLE_SUITE ? 'bg-gray-100 dark:bg-avallen-700 text-avallen-accent' : 'text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-avallen-700/50'}`}
+            >
+              <i className="fa-solid fa-building text-xs w-4"></i>
+              <span className="text-sm font-medium">Whole C-Suite</span>
+            </button>
+          </div>
 
-            <h3 className="text-[10px] font-bold text-gray-400 dark:text-slate-500 uppercase tracking-wider mb-2">History</h3>
+            <h3 className="text-[10px] font-bold text-gray-400 dark:text-slate-500 uppercase tracking-wider mb-2 mt-6">History</h3>
             <div className="space-y-1 mb-6">
                 {sessions.slice(0, 5).map(session => (
                     <button 
@@ -133,31 +151,6 @@ const Sidebar: React.FC<SidebarProps> = ({
                 ))}
                 {sessions.length === 0 && <p className="text-xs text-gray-400 dark:text-slate-600 italic pl-2">No history yet.</p>}
             </div>
-
-          <h3 className="text-[10px] font-bold text-gray-400 dark:text-slate-500 uppercase tracking-wider mb-2">Modes</h3>
-          <div className="space-y-1">
-            <button 
-              onClick={() => onSetMode(ChatMode.INDIVIDUAL)}
-              className={`w-full text-left px-3 py-2 rounded flex items-center gap-3 transition-colors ${chatMode === ChatMode.INDIVIDUAL ? 'bg-gray-100 dark:bg-avallen-700 text-avallen-accent' : 'text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-avallen-700/50'}`}
-            >
-              <i className="fa-solid fa-user text-xs w-4"></i>
-              <span className="text-sm font-medium">Individual</span>
-            </button>
-            <button 
-              onClick={() => onSetMode(ChatMode.FOCUS_GROUP)}
-              className={`w-full text-left px-3 py-2 rounded flex items-center gap-3 transition-colors ${chatMode === ChatMode.FOCUS_GROUP ? 'bg-gray-100 dark:bg-avallen-700 text-avallen-accent' : 'text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-avallen-700/50'}`}
-            >
-              <i className="fa-solid fa-users text-xs w-4"></i>
-              <span className="text-sm font-medium">Focus Group</span>
-            </button>
-            <button 
-              onClick={() => onSetMode(ChatMode.WHOLE_SUITE)}
-              className={`w-full text-left px-3 py-2 rounded flex items-center gap-3 transition-colors ${chatMode === ChatMode.WHOLE_SUITE ? 'bg-gray-100 dark:bg-avallen-700 text-avallen-accent' : 'text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-avallen-700/50'}`}
-            >
-              <i className="fa-solid fa-building text-xs w-4"></i>
-              <span className="text-sm font-medium">Whole C-Suite</span>
-            </button>
-          </div>
         </div>
 
         <div className="mb-6">
@@ -239,3 +232,4 @@ const Sidebar: React.FC<SidebarProps> = ({
 };
 
 export default Sidebar;
+    

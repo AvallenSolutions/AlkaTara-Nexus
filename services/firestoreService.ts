@@ -231,8 +231,15 @@ export const listenToMessages = (userId: string, sessionId: string, callback: (m
         callback(sessionMessages);
     }
     check();
-    const interval = setInterval(check, 1000); // Poll for changes in mock mode
-    return () => clearInterval(interval);
+    // Using an event listener for instant updates + polling as backup
+    const handler = () => check();
+    window.addEventListener('mock-message-change', handler);
+    const interval = setInterval(check, 2000); 
+    
+    return () => {
+        window.removeEventListener('mock-message-change', handler);
+        clearInterval(interval);
+    };
   }
 
   const q = query(
@@ -251,6 +258,7 @@ export const addMessage = async (userId: string, sessionId: string, message: Mes
       const all = getMockData(`avallen_${userId}_messages`);
       all.push({ ...message, sessionId });
       setMockData(`avallen_${userId}_messages`, all);
+      window.dispatchEvent(new Event('mock-message-change'));
       
       // Update session timestamp
       let sessions = getMockData(`avallen_${userId}_sessions`);
@@ -278,6 +286,7 @@ export const updateMessage = async (userId: string, sessionId: string, message: 
         if (index >= 0) {
             all[index] = { ...all[index], ...message };
             setMockData(`avallen_${userId}_messages`, all);
+            window.dispatchEvent(new Event('mock-message-change'));
         }
         return;
     }

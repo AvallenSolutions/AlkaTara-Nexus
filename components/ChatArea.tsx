@@ -366,6 +366,29 @@ const ChatArea: React.FC<ChatAreaProps> = ({
                             {msg.emailDraft && <EmailCard draft={msg.emailDraft} />}
                             {msg.calendarEvent && <CalendarCard event={msg.calendarEvent} />}
                             
+                            {/* Grounding Sources */}
+                            {msg.groundingMetadata?.groundingChunks && msg.groundingMetadata.groundingChunks.length > 0 && (
+                                <div className="mt-3 pt-3 border-t border-gray-100 dark:border-avallen-700">
+                                    <p className="text-[10px] font-bold text-gray-400 uppercase mb-2 flex items-center gap-1"><i className="fa-brands fa-google"></i> Sources</p>
+                                    <div className="flex flex-wrap gap-2">
+                                        {msg.groundingMetadata.groundingChunks.map((chunk, i) => (
+                                            chunk.web?.uri && (
+                                                <a 
+                                                    key={i} 
+                                                    href={chunk.web.uri} 
+                                                    target="_blank" 
+                                                    rel="noopener noreferrer"
+                                                    className="text-[10px] bg-gray-100 dark:bg-avallen-900 text-blue-600 dark:text-blue-400 px-2 py-1 rounded border border-gray-200 dark:border-avallen-600 hover:border-blue-400 transition-colors flex items-center gap-1 max-w-xs truncate"
+                                                >
+                                                    <span className="truncate">{chunk.web.title || "Source"}</span>
+                                                    <i className="fa-solid fa-arrow-up-right-from-square text-[8px] opacity-70"></i>
+                                                </a>
+                                            )
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                            
                             {/* Message Actions Toolbar */}
                             {!msg.isUser && (
                                 <div className="mt-3 pt-2 border-t border-gray-200 dark:border-white/10 flex justify-between items-center gap-3 opacity-0 group-hover:opacity-100 transition-opacity">
