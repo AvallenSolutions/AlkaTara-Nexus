@@ -271,6 +271,20 @@ export const addMessage = async (userId: string, sessionId: string, message: Mes
   await updateDoc(sessionRef, { lastMessageAt: Date.now() });
 };
 
+export const updateMessage = async (userId: string, sessionId: string, message: Message) => {
+    if (isMock) {
+        const all = getMockData(`avallen_${userId}_messages`);
+        const index = all.findIndex((m: any) => m.id === message.id);
+        if (index >= 0) {
+            all[index] = { ...all[index], ...message };
+            setMockData(`avallen_${userId}_messages`, all);
+        }
+        return;
+    }
+    const ref = doc(collection(db, 'users', userId, 'sessions', sessionId, 'messages'), message.id);
+    await setDoc(ref, message, { merge: true });
+};
+
 export const addKnowledgeItem = async (userId: string, item: KnowledgeItem) => {
   if (isMock) {
       const all = getMockData(`avallen_${userId}_kb`);

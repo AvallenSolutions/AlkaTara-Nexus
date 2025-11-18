@@ -59,6 +59,21 @@ export interface Agent {
   avatarUrl?: string;
   avatarColor: string; // Fallback
   isCustom?: boolean;
+  voiceURI?: string; // For TTS
+}
+
+export interface EmailDraft {
+    to: string;
+    subject: string;
+    body: string;
+}
+
+export interface CalendarEvent {
+    title: string;
+    startTime: string; // ISO
+    endTime: string; // ISO
+    description: string;
+    location?: string;
 }
 
 export interface Message {
@@ -75,6 +90,9 @@ export interface Message {
     type: 'UPDATE' | 'CREATE';
     title?: string;
   };
+  emailDraft?: EmailDraft;
+  calendarEvent?: CalendarEvent;
+  feedback?: 'UP' | 'DOWN';
   contextUsed?: string; // For debugging/transparency
 }
 

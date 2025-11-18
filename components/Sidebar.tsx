@@ -18,12 +18,13 @@ interface SidebarProps {
   onCreateSession: (mode: ChatMode) => void; 
   onToggleKnowledgeBase: () => void;
   onOpenHowToUse: () => void;
-  onOpenDirectives: () => void; // New
+  onOpenDirectives: () => void;
+  onOpenAnalytics: () => void;
   onLogout: () => void;
   onEditAgent: (agent: Agent) => void;
   onAddAgent: () => void;
-  isDarkMode: boolean; // New
-  onToggleTheme: () => void; // New
+  isDarkMode: boolean;
+  onToggleTheme: () => void;
 }
 
 const Sidebar: React.FC<SidebarProps> = ({
@@ -43,6 +44,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   onToggleKnowledgeBase,
   onOpenHowToUse,
   onOpenDirectives,
+  onOpenAnalytics,
   onLogout,
   onEditAgent,
   onAddAgent,
@@ -111,105 +113,82 @@ const Sidebar: React.FC<SidebarProps> = ({
         <div className="mb-6">
              <button 
                 onClick={() => onCreateSession(chatMode)}
-                className="w-full bg-avallen-accent/10 hover:bg-avallen-accent/20 text-avallen-accent border border-avallen-accent/50 rounded-lg py-2 text-sm font-bold transition-all flex items-center justify-center gap-2 mb-4"
-             >
-                 <i className="fa-solid fa-plus"></i> New Chat
-             </button>
+                className="w-full bg-avallen-accent/10 hover:bg-avallen-accent/20 text-avallen-accent dark:text-sky-400 border border-avallen-accent/20 dark:border-sky-500/30 rounded-lg py-2 text-xs font-bold flex items-center justify-center gap-2 mb-4 transition-colors"
+            >
+                <i className="fa-solid fa-plus"></i> New Chat
+            </button>
 
-             <h3 className="text-xs font-semibold text-gray-400 dark:text-avallen-400 uppercase tracking-wider mb-2 ml-2">Recent Sessions</h3>
-             <div className="space-y-1 max-h-40 overflow-y-auto">
-                 {sessions.map(s => (
-                     <button
-                        key={s.id}
-                        onClick={() => onSelectSession(s.id)}
-                        className={`w-full text-left px-3 py-1.5 rounded-md text-xs truncate transition-colors flex justify-between group ${currentSessionId === s.id ? 'bg-gray-200 dark:bg-avallen-700 text-gray-900 dark:text-white' : 'text-gray-500 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-avallen-700/50'}`}
-                     >
-                        <span className="truncate">{s.title}</span>
-                        <span className="text-[9px] text-gray-400 dark:text-slate-600 opacity-0 group-hover:opacity-100">{formatDate(s.lastMessageAt)}</span>
-                     </button>
-                 ))}
-             </div>
+            <h3 className="text-[10px] font-bold text-gray-400 dark:text-slate-500 uppercase tracking-wider mb-2">History</h3>
+            <div className="space-y-1 mb-6">
+                {sessions.slice(0, 5).map(session => (
+                    <button 
+                        key={session.id}
+                        onClick={() => onSelectSession(session.id)}
+                        className={`w-full text-left px-3 py-2 rounded text-xs truncate flex items-center gap-2 transition-colors ${currentSessionId === session.id ? 'bg-gray-100 dark:bg-avallen-700 text-gray-900 dark:text-white font-medium' : 'text-gray-500 dark:text-slate-400 hover:bg-gray-50 dark:hover:bg-avallen-700/50'}`}
+                    >
+                        <i className={`fa-regular ${session.mode === ChatMode.WHOLE_SUITE ? 'fa-building' : session.mode === ChatMode.FOCUS_GROUP ? 'fa-users' : 'fa-comment'} text-[10px]`}></i>
+                        <span className="truncate flex-1">{session.title}</span>
+                        <span className="text-[9px] opacity-50">{formatDate(session.lastMessageAt)}</span>
+                    </button>
+                ))}
+                {sessions.length === 0 && <p className="text-xs text-gray-400 dark:text-slate-600 italic pl-2">No history yet.</p>}
+            </div>
+
+          <h3 className="text-[10px] font-bold text-gray-400 dark:text-slate-500 uppercase tracking-wider mb-2">Modes</h3>
+          <div className="space-y-1">
+            <button 
+              onClick={() => onSetMode(ChatMode.INDIVIDUAL)}
+              className={`w-full text-left px-3 py-2 rounded flex items-center gap-3 transition-colors ${chatMode === ChatMode.INDIVIDUAL ? 'bg-gray-100 dark:bg-avallen-700 text-avallen-accent' : 'text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-avallen-700/50'}`}
+            >
+              <i className="fa-solid fa-user text-xs w-4"></i>
+              <span className="text-sm font-medium">Individual</span>
+            </button>
+            <button 
+              onClick={() => onSetMode(ChatMode.FOCUS_GROUP)}
+              className={`w-full text-left px-3 py-2 rounded flex items-center gap-3 transition-colors ${chatMode === ChatMode.FOCUS_GROUP ? 'bg-gray-100 dark:bg-avallen-700 text-avallen-accent' : 'text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-avallen-700/50'}`}
+            >
+              <i className="fa-solid fa-users text-xs w-4"></i>
+              <span className="text-sm font-medium">Focus Group</span>
+            </button>
+            <button 
+              onClick={() => onSetMode(ChatMode.WHOLE_SUITE)}
+              className={`w-full text-left px-3 py-2 rounded flex items-center gap-3 transition-colors ${chatMode === ChatMode.WHOLE_SUITE ? 'bg-gray-100 dark:bg-avallen-700 text-avallen-accent' : 'text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-avallen-700/50'}`}
+            >
+              <i className="fa-solid fa-building text-xs w-4"></i>
+              <span className="text-sm font-medium">Whole C-Suite</span>
+            </button>
+          </div>
         </div>
 
         <div className="mb-6">
-          <h3 className="text-xs font-semibold text-gray-400 dark:text-avallen-400 uppercase tracking-wider mb-2 ml-2">Chat Mode</h3>
-          <div className="space-y-1">
-            <button
-              onClick={() => onSetMode(ChatMode.INDIVIDUAL)}
-              className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors flex items-center gap-3 ${chatMode === ChatMode.INDIVIDUAL ? 'bg-gray-200 dark:bg-avallen-700 text-gray-900 dark:text-white' : 'text-gray-500 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-avallen-700/50'}`}
-            >
-              <i className="fa-solid fa-user w-4 text-center"></i> Individual
-            </button>
-            <button
-              onClick={() => onSetMode(ChatMode.FOCUS_GROUP)}
-              className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors flex items-center gap-3 ${chatMode === ChatMode.FOCUS_GROUP ? 'bg-gray-200 dark:bg-avallen-700 text-gray-900 dark:text-white' : 'text-gray-500 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-avallen-700/50'}`}
-            >
-              <i className="fa-solid fa-users w-4 text-center"></i> Focus Group
-            </button>
-            <button
-              onClick={() => onSetMode(ChatMode.WHOLE_SUITE)}
-              className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors flex items-center gap-3 ${chatMode === ChatMode.WHOLE_SUITE ? 'bg-gray-200 dark:bg-avallen-700 text-gray-900 dark:text-white' : 'text-gray-500 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-avallen-700/50'}`}
-            >
-              <i className="fa-solid fa-building w-4 text-center"></i> Whole Suite
-            </button>
+          <div className="flex justify-between items-center mb-2">
+              <h3 className="text-[10px] font-bold text-gray-400 dark:text-slate-500 uppercase tracking-wider">Agents</h3>
+              <button onClick={onAddAgent} className="text-[10px] text-avallen-accent hover:underline">Add</button>
           </div>
-        </div>
-
-        <div className="mb-8">
-          <div className="flex justify-between items-center mb-2 ml-2">
-             <h3 className="text-xs font-semibold text-gray-400 dark:text-avallen-400 uppercase tracking-wider">Agents</h3>
-             <button 
-                onClick={onAddAgent}
-                className="text-xs bg-gray-200 dark:bg-avallen-700 hover:bg-gray-300 dark:hover:bg-avallen-600 text-gray-700 dark:text-white px-2 py-1 rounded transition-colors shadow-sm"
-                title="Create New Agent"
-             >
-                 <i className="fa-solid fa-plus mr-1"></i> Add
-             </button>
-          </div>
-          
           <div className="space-y-1">
-            {agents.map(agent => {
+            {agents.map((agent) => {
               const isSelected = selectedAgents.includes(agent.id);
               return (
-                <div 
-                    key={agent.id}
-                    className={`group relative w-full rounded-md transition-all
-                    ${isSelected 
-                      ? 'bg-gray-200/80 dark:bg-avallen-700/80 border-l-2 border-avallen-accent' 
-                      : 'hover:bg-gray-100 dark:hover:bg-avallen-700/30 border-l-2 border-transparent'}
-                    ${chatMode === ChatMode.WHOLE_SUITE ? 'opacity-70' : ''}
-                  `}
-                >
+                <div key={agent.id} className="group relative">
                     <button
-                        onClick={() => handleAgentClick(agent.id)}
-                        disabled={chatMode === ChatMode.WHOLE_SUITE}
-                        className="w-full text-left pl-3 pr-8 py-2 flex items-center gap-3"
+                    onClick={() => handleAgentClick(agent.id)}
+                    className={`w-full text-left px-3 py-2 rounded flex items-center gap-3 transition-colors ${isSelected ? 'bg-gray-100 dark:bg-avallen-700' : 'hover:bg-gray-50 dark:hover:bg-avallen-700/50'}`}
                     >
-                        <div className={`w-8 h-8 rounded-full ${agent.avatarColor} flex-shrink-0 flex items-center justify-center overflow-hidden border border-white dark:border-avallen-600 shadow-sm`}>
-                            {agent.avatarUrl ? (
-                                <img src={agent.avatarUrl} alt={agent.name} className="w-full h-full object-cover" />
-                            ) : (
-                                <span className="text-[10px] text-white font-bold">{agent.name.charAt(0)}</span>
-                            )}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                            <p className={`text-sm font-medium truncate ${isSelected ? 'text-gray-900 dark:text-white' : 'text-gray-500 dark:text-slate-400 group-hover:text-gray-800 dark:group-hover:text-slate-200'}`}>
-                                {agent.name} {agent.surname}
-                            </p>
-                            <p className="text-[10px] text-gray-400 dark:text-slate-500 truncate">{agent.role}</p>
-                        </div>
-                        {isSelected && chatMode === ChatMode.FOCUS_GROUP && <i className="fa-solid fa-check text-avallen-accent text-xs"></i>}
+                    <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] text-white ${agent.avatarColor} overflow-hidden border border-gray-200 dark:border-avallen-600`}>
+                        {agent.avatarUrl ? <img src={agent.avatarUrl} alt={agent.name} className="w-full h-full object-cover" /> : agent.name.charAt(0)}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                        <p className={`text-sm font-medium truncate ${isSelected ? 'text-gray-900 dark:text-white' : 'text-gray-600 dark:text-slate-300'}`}>{agent.name}</p>
+                        <p className="text-[10px] text-gray-400 dark:text-slate-500 truncate">{agent.role}</p>
+                    </div>
+                    {isSelected && (
+                        <div className="w-1.5 h-1.5 rounded-full bg-green-500"></div>
+                    )}
                     </button>
-                    
-                    {/* Edit Trigger */}
                     <button 
                         onClick={(e) => { e.stopPropagation(); onEditAgent(agent); }}
-                        className={`absolute right-1 top-2 p-1.5 rounded-md transition-colors z-10
-                             ${isSelected 
-                                ? 'text-avallen-accent hover:bg-gray-300 dark:hover:bg-avallen-600' 
-                                : 'text-gray-400 dark:text-slate-600 hover:text-gray-800 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-avallen-600'}
-                        `}
-                        title="Edit Agent Details"
+                        className="absolute right-8 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-avallen-accent bg-white dark:bg-avallen-800 p-1 rounded shadow-sm opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity z-10"
+                        title="Edit Agent"
                     >
                         <i className="fa-solid fa-pen-to-square text-xs"></i>
                     </button>
@@ -221,46 +200,38 @@ const Sidebar: React.FC<SidebarProps> = ({
         </>
         )}
 
-        <div>
-           <h3 className="text-xs font-semibold text-gray-400 dark:text-avallen-400 uppercase tracking-wider mb-2 ml-2">Resources</h3>
-           <div className="space-y-1">
-             <button
-                onClick={onToggleKnowledgeBase}
-                className="w-full text-left px-3 py-2 rounded-md text-sm text-gray-500 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-avallen-700/50 hover:text-gray-900 dark:hover:text-white transition-colors flex items-center gap-3"
-              >
-                <i className="fa-solid fa-book-open w-4 text-yellow-500 text-center"></i> Knowledge Base
-              </button>
-              <button
-                onClick={onOpenDirectives}
-                className="w-full text-left px-3 py-2 rounded-md text-sm text-gray-500 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-avallen-700/50 hover:text-gray-900 dark:hover:text-white transition-colors flex items-center gap-3"
-              >
-                <i className="fa-solid fa-clipboard-list w-4 text-green-500 text-center"></i> Directives
-              </button>
-              <button
-                onClick={onOpenHowToUse}
-                className="w-full text-left px-3 py-2 rounded-md text-sm text-gray-500 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-avallen-700/50 hover:text-gray-900 dark:hover:text-white transition-colors flex items-center gap-3"
-              >
-                <i className="fa-solid fa-circle-info w-4 text-blue-400 text-center"></i> How to Use
-              </button>
-           </div>
+        {/* Shared Resources - Always Visible */}
+        <div className="mb-6">
+             <h3 className="text-[10px] font-bold text-gray-400 dark:text-slate-500 uppercase tracking-wider mb-2">Resources</h3>
+             <button onClick={onToggleKnowledgeBase} className="w-full text-left px-3 py-2 rounded flex items-center gap-3 text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-avallen-700/50 transition-colors">
+                 <i className="fa-solid fa-database text-yellow-500 text-xs w-4"></i>
+                 <span className="text-sm">Knowledge Base</span>
+             </button>
+             <button onClick={onOpenDirectives} className="w-full text-left px-3 py-2 rounded flex items-center gap-3 text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-avallen-700/50 transition-colors">
+                 <i className="fa-solid fa-clipboard-list text-green-500 text-xs w-4"></i>
+                 <span className="text-sm">Directives</span>
+             </button>
+             <button onClick={onOpenAnalytics} className="w-full text-left px-3 py-2 rounded flex items-center gap-3 text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-avallen-700/50 transition-colors">
+                 <i className="fa-solid fa-chart-pie text-purple-500 text-xs w-4"></i>
+                 <span className="text-sm">Analytics</span>
+             </button>
+             <button onClick={onOpenHowToUse} className="w-full text-left px-3 py-2 rounded flex items-center gap-3 text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-avallen-700/50 transition-colors">
+                 <i className="fa-solid fa-circle-question text-blue-500 text-xs w-4"></i>
+                 <span className="text-sm">How to Use</span>
+             </button>
         </div>
       </div>
 
       <div className="p-4 border-t border-gray-200 dark:border-avallen-700">
-         <div className="flex items-center justify-between mb-2">
-             <span className="text-xs text-gray-400 dark:text-slate-500">Theme</span>
-             <button 
-                onClick={onToggleTheme} 
-                className="bg-gray-200 dark:bg-avallen-700 rounded-full p-1 w-12 h-6 flex items-center transition-all relative"
-             >
-                 <div className={`w-4 h-4 rounded-full bg-white shadow-sm transform transition-transform absolute ${isDarkMode ? 'translate-x-6 bg-avallen-900' : 'translate-x-0.5'}`}></div>
-                 <i className={`fa-solid fa-sun text-[8px] absolute left-1.5 ${isDarkMode ? 'text-gray-400' : 'text-yellow-500'}`}></i>
-                 <i className={`fa-solid fa-moon text-[8px] absolute right-1.5 ${isDarkMode ? 'text-blue-300' : 'text-gray-400'}`}></i>
-             </button>
-         </div>
-        <button onClick={onLogout} className="flex items-center gap-3 text-sm text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white transition-colors w-full px-2 py-2">
-          <i className="fa-solid fa-right-from-bracket w-4 text-center"></i> Sign Out
-        </button>
+        <div className="flex items-center justify-between text-gray-500 dark:text-slate-400">
+            <button onClick={onToggleTheme} className="hover:text-gray-900 dark:hover:text-white transition-colors flex items-center gap-2 text-xs">
+                <i className={`fa-solid ${isDarkMode ? 'fa-sun' : 'fa-moon'}`}></i>
+                {isDarkMode ? 'Light Mode' : 'Dark Mode'}
+            </button>
+            <button onClick={onLogout} className="hover:text-red-500 transition-colors text-xs font-bold">
+                Log Out
+            </button>
+        </div>
       </div>
     </div>
     </>

@@ -2,7 +2,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Message, Agent, ChatMode, Attachment, ChartData } from '../types';
+import { Message, Agent, ChatMode, Attachment, ChartData, EmailDraft, CalendarEvent } from '../types';
 
 interface ChatAreaProps {
   messages: Message[];
@@ -26,6 +26,9 @@ interface ChatAreaProps {
   // Model Selection
   selectedModel: string;
   onSelectModel: (model: string) => void;
+  
+  // Feedback
+  onFeedback: (messageId: string, type: 'UP' | 'DOWN') => void;
 }
 
 const SimpleChart: React.FC<{ data: ChartData }> = ({ data }) => {
@@ -64,6 +67,53 @@ const SimpleChart: React.FC<{ data: ChartData }> = ({ data }) => {
     );
 };
 
+const EmailCard: React.FC<{ draft: EmailDraft }> = ({ draft }) => (
+    <div className="bg-blue-50 dark:bg-avallen-800/50 border border-blue-100 dark:border-avallen-600 rounded-xl p-4 my-3 relative overflow-hidden">
+        <div className="absolute top-0 left-0 w-1 h-full bg-blue-500"></div>
+        <div className="flex justify-between items-start mb-3">
+             <h4 className="font-bold text-gray-800 dark:text-white text-sm flex items-center gap-2">
+                 <i className="fa-solid fa-envelope text-blue-500"></i> Email Draft
+             </h4>
+             <a href={`mailto:${draft.to}?subject=${encodeURIComponent(draft.subject)}&body=${encodeURIComponent(draft.body)}`} target="_blank" rel="noopener noreferrer" className="text-xs bg-blue-500 hover:bg-blue-600 text-white px-3 py-1.5 rounded-full transition-colors flex items-center gap-1">
+                 Open Mail <i className="fa-solid fa-arrow-up-right-from-square text-[10px]"></i>
+             </a>
+        </div>
+        <div className="text-xs text-gray-600 dark:text-slate-300 space-y-1">
+            <p><span className="font-bold text-gray-400">To:</span> {draft.to}</p>
+            <p><span className="font-bold text-gray-400">Subject:</span> {draft.subject}</p>
+        </div>
+        <div className="mt-3 p-3 bg-white dark:bg-avallen-900 rounded border border-gray-100 dark:border-avallen-700 text-xs text-gray-700 dark:text-slate-300 whitespace-pre-wrap font-mono">
+            {draft.body}
+        </div>
+    </div>
+);
+
+const CalendarCard: React.FC<{ event: CalendarEvent }> = ({ event }) => {
+    const googleUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(event.title)}&dates=${event.startTime.replace(/[-:]/g, '')}/${event.endTime.replace(/[-:]/g, '')}&details=${encodeURIComponent(event.description)}&location=${encodeURIComponent(event.location || '')}`;
+    
+    return (
+    <div className="bg-orange-50 dark:bg-avallen-800/50 border border-orange-100 dark:border-avallen-600 rounded-xl p-4 my-3 relative overflow-hidden">
+        <div className="absolute top-0 left-0 w-1 h-full bg-orange-500"></div>
+        <div className="flex justify-between items-start mb-3">
+             <h4 className="font-bold text-gray-800 dark:text-white text-sm flex items-center gap-2">
+                 <i className="fa-solid fa-calendar-check text-orange-500"></i> Calendar Invite
+             </h4>
+             <a href={googleUrl} target="_blank" rel="noopener noreferrer" className="text-xs bg-orange-500 hover:bg-orange-600 text-white px-3 py-1.5 rounded-full transition-colors flex items-center gap-1">
+                 Add to Calendar <i className="fa-solid fa-plus text-[10px]"></i>
+             </a>
+        </div>
+        <div className="text-xs text-gray-700 dark:text-slate-300 space-y-2">
+            <p className="font-bold text-base">{event.title}</p>
+            <div className="flex items-center gap-4 text-gray-500 dark:text-slate-400">
+                <p><i className="fa-regular fa-clock mr-1"></i> {new Date(event.startTime).toLocaleString()} </p>
+                {event.location && <p><i className="fa-solid fa-location-dot mr-1"></i> {event.location}</p>}
+            </div>
+            <p className="italic opacity-80">{event.description}</p>
+        </div>
+    </div>
+    );
+};
+
 const ChatArea: React.FC<ChatAreaProps> = ({ 
   messages, 
   onSendMessage, 
@@ -81,7 +131,8 @@ const ChatArea: React.FC<ChatAreaProps> = ({
   isDevilsAdvocate,
   onToggleDevilsAdvocate,
   selectedModel,
-  onSelectModel
+  onSelectModel,
+  onFeedback
 }) => {
   const [inputText, setInputText] = useState('');
   const [attachments, setAttachments] = useState<Attachment[]>([]);
@@ -141,16 +192,25 @@ const ChatArea: React.FC<ChatAreaProps> = ({
     }
   };
 
-  const speakText = (text: string) => {
+  const getAgentVoice = (name: string) => {
+      const agent = activeAgents.find(a => name.includes(a.name));
+      return agent?.voiceURI;
+  }
+
+  const speakText = (text: string, voiceURI?: string) => {
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.rate = 1.0;
+      if (voiceURI) {
+          const voice = window.speechSynthesis.getVoices().find(v => v.voiceURI === voiceURI);
+          if (voice) utterance.voice = voice;
+      }
       window.speechSynthesis.speak(utterance);
   };
 
   const copyToClipboard = (text: string) => {
       navigator.clipboard.writeText(text);
-      alert("Copied to clipboard!");
+      // Could show toast here
   };
 
   const toggleVoiceInput = () => {
@@ -171,6 +231,16 @@ const ChatArea: React.FC<ChatAreaProps> = ({
           setInputText(prev => prev + ' ' + event.results[0][0].transcript);
       };
       recognition.start();
+  };
+
+  const handleExport = () => {
+      const transcript = messages.map(m => `[${new Date(m.timestamp).toLocaleString()}] ${m.senderName}:\n${m.content}\n\n`).join('---\n\n');
+      const blob = new Blob([transcript], { type: 'text/markdown' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `chat_export_${new Date().toISOString().split('T')[0]}.md`;
+      a.click();
   };
 
   // Custom Code Block Renderer for Copy Button
@@ -241,8 +311,9 @@ const ChatArea: React.FC<ChatAreaProps> = ({
                     <button onClick={() => { setShowSearch(false); setSearchQuery(''); }} className="text-gray-400 hover:text-gray-600 dark:hover:text-white ml-2"><i className="fa-solid fa-times"></i></button>
                 </div>
             ) : (
-                <button onClick={() => setShowSearch(true)} className="text-gray-400 dark:text-slate-400 hover:text-gray-600 dark:hover:text-white p-2"><i className="fa-solid fa-search"></i></button>
+                <button onClick={() => setShowSearch(true)} className="text-gray-400 dark:text-slate-400 hover:text-gray-600 dark:hover:text-white p-2" title="Search Chat"><i className="fa-solid fa-search"></i></button>
             )}
+            <button onClick={handleExport} className="text-gray-400 dark:text-slate-400 hover:text-avallen-accent p-2" title="Export Chat"><i className="fa-solid fa-file-export"></i></button>
         </div>
       </div>
 
@@ -255,6 +326,7 @@ const ChatArea: React.FC<ChatAreaProps> = ({
         {filteredMessages.map((msg, idx) => {
             const avatarUrl = !msg.isUser ? getAgentAvatar(msg.senderName) : null;
             const isLast = idx === messages.length - 1;
+            const voiceURI = !msg.isUser ? getAgentVoice(msg.senderName) : undefined;
             
             return (
             <div key={msg.id} className={`flex w-full ${msg.isUser ? 'justify-end' : 'justify-start'}`}>
@@ -291,13 +363,26 @@ const ChatArea: React.FC<ChatAreaProps> = ({
                             </div>
 
                             {msg.chartData && <SimpleChart data={msg.chartData} />}
+                            {msg.emailDraft && <EmailCard draft={msg.emailDraft} />}
+                            {msg.calendarEvent && <CalendarCard event={msg.calendarEvent} />}
                             
                             {/* Message Actions Toolbar */}
                             {!msg.isUser && (
                                 <div className="mt-3 pt-2 border-t border-gray-200 dark:border-white/10 flex justify-between items-center gap-3 opacity-0 group-hover:opacity-100 transition-opacity">
-                                    <div className="flex gap-3">
+                                    <div className="flex gap-3 items-center">
                                         <button onClick={() => copyToClipboard(msg.content)} className="text-xs text-gray-400 dark:text-slate-500 hover:text-gray-700 dark:hover:text-white" title="Copy Text"><i className="fa-regular fa-copy"></i></button>
-                                        <button onClick={() => speakText(msg.content)} className="text-xs text-gray-400 dark:text-slate-500 hover:text-gray-700 dark:hover:text-white" title="Read Aloud"><i className="fa-solid fa-volume-high"></i></button>
+                                        <button onClick={() => speakText(msg.content, voiceURI)} className="text-xs text-gray-400 dark:text-slate-500 hover:text-gray-700 dark:hover:text-white" title="Read Aloud"><i className="fa-solid fa-volume-high"></i></button>
+                                        
+                                        {/* Feedback */}
+                                        <div className="h-3 w-[1px] bg-gray-300 dark:bg-avallen-700 mx-1"></div>
+                                        <button 
+                                            onClick={() => onFeedback(msg.id, 'UP')} 
+                                            className={`text-xs hover:text-green-500 ${msg.feedback === 'UP' ? 'text-green-500' : 'text-gray-400 dark:text-slate-500'}`}
+                                        ><i className="fa-solid fa-thumbs-up"></i></button>
+                                        <button 
+                                            onClick={() => onFeedback(msg.id, 'DOWN')} 
+                                            className={`text-xs hover:text-red-500 ${msg.feedback === 'DOWN' ? 'text-red-500' : 'text-gray-400 dark:text-slate-500'}`}
+                                        ><i className="fa-solid fa-thumbs-down"></i></button>
                                     </div>
                                     {isLast && !processingAgentName && (
                                         <button onClick={onRegenerate} className="text-xs text-avallen-accent hover:text-sky-600 dark:hover:text-white flex items-center gap-1">
@@ -343,7 +428,7 @@ const ChatArea: React.FC<ChatAreaProps> = ({
       {/* Input */}
       <div className="p-4 bg-gray-50 dark:bg-avallen-900 border-t border-gray-200 dark:border-avallen-700 transition-colors duration-300">
         <div className="flex gap-2 mb-3 overflow-x-auto pb-1 scrollbar-hide items-center">
-             <div className="bg-white dark:bg-avallen-800 rounded-full border border-gray-200 dark:border-avallen-700 px-2 py-1 flex items-center gap-2">
+             <div className="bg-white dark:bg-avallen-800 rounded-full border border-gray-200 dark:border-avallen-700 px-2 py-1 flex items-center gap-2 flex-shrink-0">
                  <i className="fa-solid fa-microchip text-gray-400 dark:text-slate-500 text-[10px]"></i>
                  <select 
                     value={selectedModel}
@@ -354,10 +439,10 @@ const ChatArea: React.FC<ChatAreaProps> = ({
                     <option value="gemini-3-pro-preview">Pro 3.0 (Smartest)</option>
                  </select>
              </div>
-             <div className="w-[1px] h-4 bg-gray-300 dark:bg-avallen-700 mx-1"></div>
-             <button onClick={onToggleDeepResearch} className={`px-3 py-1.5 rounded-full text-[10px] font-bold flex items-center gap-2 border transition-colors ${isDeepResearch ? 'bg-blue-100 dark:bg-blue-900/80 text-blue-600 dark:text-blue-200 border-blue-300 dark:border-blue-500' : 'bg-white dark:bg-avallen-800 text-gray-500 dark:text-slate-400 border-gray-200 dark:border-avallen-700'}`}><i className={`fa-solid ${isDeepResearch ? 'fa-magnifying-glass-chart' : 'fa-magnifying-glass'}`}></i> Deep Research</button>
-             <button onClick={onToggleCanvas} className={`px-3 py-1.5 rounded-full text-[10px] font-bold flex items-center gap-2 border transition-colors ${isCanvasOpen ? 'bg-pink-100 dark:bg-pink-900/80 text-pink-600 dark:text-pink-200 border-pink-300 dark:border-pink-500' : 'bg-white dark:bg-avallen-800 text-gray-500 dark:text-slate-400 border-gray-200 dark:border-avallen-700'}`}><i className={`fa-solid ${isCanvasOpen ? 'fa-pen-ruler' : 'fa-pen-to-square'}`}></i> Canvas</button>
-             <button onClick={onToggleDevilsAdvocate} className={`px-3 py-1.5 rounded-full text-[10px] font-bold flex items-center gap-2 border transition-colors ${isDevilsAdvocate ? 'bg-red-100 dark:bg-red-900/80 text-red-600 dark:text-red-200 border-red-300 dark:border-red-500' : 'bg-white dark:bg-avallen-800 text-gray-500 dark:text-slate-400 border-gray-200 dark:border-avallen-700'}`}><i className="fa-solid fa-fire"></i> Devil's Advocate</button>
+             <div className="w-[1px] h-4 bg-gray-300 dark:bg-avallen-700 mx-1 flex-shrink-0"></div>
+             <button onClick={onToggleDeepResearch} className={`px-3 py-1.5 rounded-full text-[10px] font-bold flex items-center gap-2 border transition-colors flex-shrink-0 ${isDeepResearch ? 'bg-blue-100 dark:bg-blue-900/80 text-blue-600 dark:text-blue-200 border-blue-300 dark:border-blue-500' : 'bg-white dark:bg-avallen-800 text-gray-500 dark:text-slate-400 border-gray-200 dark:border-avallen-700'}`}><i className={`fa-solid ${isDeepResearch ? 'fa-magnifying-glass-chart' : 'fa-magnifying-glass'}`}></i> Deep Research</button>
+             <button onClick={onToggleCanvas} className={`px-3 py-1.5 rounded-full text-[10px] font-bold flex items-center gap-2 border transition-colors flex-shrink-0 ${isCanvasOpen ? 'bg-pink-100 dark:bg-pink-900/80 text-pink-600 dark:text-pink-200 border-pink-300 dark:border-pink-500' : 'bg-white dark:bg-avallen-800 text-gray-500 dark:text-slate-400 border-gray-200 dark:border-avallen-700'}`}><i className={`fa-solid ${isCanvasOpen ? 'fa-pen-ruler' : 'fa-pen-to-square'}`}></i> Canvas</button>
+             <button onClick={onToggleDevilsAdvocate} className={`px-3 py-1.5 rounded-full text-[10px] font-bold flex items-center gap-2 border transition-colors flex-shrink-0 ${isDevilsAdvocate ? 'bg-red-100 dark:bg-red-900/80 text-red-600 dark:text-red-200 border-red-300 dark:border-red-500' : 'bg-white dark:bg-avallen-800 text-gray-500 dark:text-slate-400 border-gray-200 dark:border-avallen-700'}`}><i className="fa-solid fa-fire"></i> Devil's Advocate</button>
         </div>
 
         {attachments.length > 0 && (

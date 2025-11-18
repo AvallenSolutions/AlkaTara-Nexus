@@ -59,7 +59,7 @@ const Auth: React.FC = () => {
           }
           if (mode === 'SIGNUP') {
               if (!STRONG_PASSWORD_REGEX.test(password)) {
-                  setError("Password must be 8+ chars, with uppercase, lowercase, number, and special char.");
+                  setError("Password is too weak.");
                   return false;
               }
               if (password !== confirmPassword) {
@@ -123,7 +123,7 @@ const Auth: React.FC = () => {
         
         {isMock && (
             <div className="absolute top-0 left-0 w-full bg-amber-500 text-white text-[10px] font-bold text-center py-1">
-                DEMO MODE: MOCK AUTHENTICATION ACTIVE
+                DEMO MODE: MOCK DATABASE ACTIVE (Sign Up required)
             </div>
         )}
 
@@ -213,10 +213,13 @@ const Auth: React.FC = () => {
                                 placeholder="••••••••"
                             />
                         </div>
-                         <div className="mt-2 text-[10px] text-gray-400 dark:text-slate-500 space-y-1">
+                        
+                        {/* Password Strength Indicators */}
+                         <div className="mt-2 text-[10px] text-gray-400 dark:text-slate-500 space-y-1 bg-gray-50 dark:bg-avallen-900/30 p-2 rounded">
                             <p className={password.length >= 8 ? 'text-green-500' : ''}><i className={`fa-solid ${password.length >= 8 ? 'fa-check' : 'fa-circle text-[4px]'} mr-1`}></i> Min 8 characters</p>
                             <p className={/[A-Z]/.test(password) ? 'text-green-500' : ''}><i className={`fa-solid ${/[A-Z]/.test(password) ? 'fa-check' : 'fa-circle text-[4px]'} mr-1`}></i> Uppercase letter</p>
                             <p className={/[0-9]/.test(password) ? 'text-green-500' : ''}><i className={`fa-solid ${/[0-9]/.test(password) ? 'fa-check' : 'fa-circle text-[4px]'} mr-1`}></i> Number</p>
+                            <p className={/[@$!%*?&]/.test(password) ? 'text-green-500' : ''}><i className={`fa-solid ${/[@$!%*?&]/.test(password) ? 'fa-check' : 'fa-circle text-[4px]'} mr-1`}></i> Special character</p>
                          </div>
                     </div>
                 )}

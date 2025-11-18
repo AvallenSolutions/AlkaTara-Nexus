@@ -19,8 +19,20 @@ const AgentModal: React.FC<AgentModalProps> = ({ isOpen, onClose, onSave, onDele
     systemInstruction: '',
     backstory: '',
     avatarUrl: '',
-    avatarColor: 'bg-slate-600'
+    avatarColor: 'bg-slate-600',
+    voiceURI: ''
   });
+
+  const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
+
+  useEffect(() => {
+    const loadVoices = () => {
+        const voices = window.speechSynthesis.getVoices();
+        setAvailableVoices(voices);
+    };
+    loadVoices();
+    window.speechSynthesis.onvoiceschanged = loadVoices;
+  }, []);
 
   useEffect(() => {
     if (isOpen) {
@@ -36,7 +48,8 @@ const AgentModal: React.FC<AgentModalProps> = ({ isOpen, onClose, onSave, onDele
                 systemInstruction: '',
                 backstory: '',
                 avatarUrl: '',
-                avatarColor: 'bg-slate-600'
+                avatarColor: 'bg-slate-600',
+                voiceURI: ''
             });
         }
     }
@@ -58,6 +71,7 @@ const AgentModal: React.FC<AgentModalProps> = ({ isOpen, onClose, onSave, onDele
       backstory: formData.backstory || '',
       avatarUrl: formData.avatarUrl,
       avatarColor: formData.avatarColor || 'bg-slate-600',
+      voiceURI: formData.voiceURI,
       isCustom: true
     };
     
@@ -109,16 +123,31 @@ const AgentModal: React.FC<AgentModalProps> = ({ isOpen, onClose, onSave, onDele
                 </div>
             </div>
 
-            <div>
-                <label className="block text-xs font-bold text-gray-500 dark:text-slate-400 uppercase mb-1">Role / Title</label>
-                <input 
-                    type="text" 
-                    value={formData.role}
-                    onChange={e => setFormData({...formData, role: e.target.value})}
-                    className="w-full bg-gray-50 dark:bg-avallen-900/50 border border-gray-300 dark:border-avallen-600 rounded p-2 text-gray-900 dark:text-white focus:border-avallen-accent outline-none"
-                    placeholder="e.g. Head of Security"
-                    required
-                />
+            <div className="grid grid-cols-2 gap-4">
+                <div>
+                    <label className="block text-xs font-bold text-gray-500 dark:text-slate-400 uppercase mb-1">Role / Title</label>
+                    <input 
+                        type="text" 
+                        value={formData.role}
+                        onChange={e => setFormData({...formData, role: e.target.value})}
+                        className="w-full bg-gray-50 dark:bg-avallen-900/50 border border-gray-300 dark:border-avallen-600 rounded p-2 text-gray-900 dark:text-white focus:border-avallen-accent outline-none"
+                        placeholder="e.g. Head of Security"
+                        required
+                    />
+                </div>
+                <div>
+                    <label className="block text-xs font-bold text-gray-500 dark:text-slate-400 uppercase mb-1">Voice</label>
+                    <select 
+                        value={formData.voiceURI || ''}
+                        onChange={e => setFormData({...formData, voiceURI: e.target.value})}
+                        className="w-full bg-gray-50 dark:bg-avallen-900/50 border border-gray-300 dark:border-avallen-600 rounded p-2 text-gray-900 dark:text-white focus:border-avallen-accent outline-none"
+                    >
+                        <option value="">Default Browser Voice</option>
+                        {availableVoices.map(v => (
+                            <option key={v.voiceURI} value={v.voiceURI}>{v.name} ({v.lang})</option>
+                        ))}
+                    </select>
+                </div>
             </div>
 
             <div>

@@ -10,12 +10,13 @@ import KanbanBoard from './components/KanbanBoard';
 import HowToUseModal from './components/HowToUseModal';
 import CanvasPanel from './components/CanvasPanel';
 import DirectivesModal from './components/DirectivesModal';
+import AnalyticsDashboard from './components/AnalyticsDashboard';
 import { generateAgentResponse } from './services/geminiService';
 import { INITIAL_AGENTS } from './constants';
 import { Agent, Message, ChatMode, Attachment, KnowledgeItem, Task, TaskStatus, Folder, CanvasDocument, ChatSession, Directive } from './types';
 import { 
   initializeUserData, listenToAgents, listenToKnowledgeBase, 
-  listenToMessages, addMessage, addKnowledgeItem, saveAgent, deleteAgent,
+  listenToMessages, addMessage, updateMessage, addKnowledgeItem, saveAgent, deleteAgent,
   listenToTasks, updateTask, deleteTask, listenToFolders,
   listenToUserSessions, createNewSession, deleteSession,
   listenToDirectives, saveDirective, deleteDirective
@@ -52,6 +53,7 @@ const App: React.FC = () => {
   const [isAgentModalOpen, setIsAgentModalOpen] = useState(false);
   const [isHowToUseOpen, setIsHowToUseOpen] = useState(false); 
   const [isDirectivesOpen, setIsDirectivesOpen] = useState(false);
+  const [isAnalyticsOpen, setIsAnalyticsOpen] = useState(false);
   const [editingAgent, setEditingAgent] = useState<Agent | null>(null);
   
   // Model Selection (Default: Flash)
@@ -218,6 +220,8 @@ const App: React.FC = () => {
                     id: generateId(), senderId: agent.id, senderName: agent.name,
                     content: cleanedText, timestamp: Date.now(), isUser: false,
                     groundingMetadata: result.groundingMetadata, chartData: result.chartData,
+                    emailDraft: result.emailDraft,
+                    calendarEvent: result.calendarEvent,
                     contextUsed: result.contextUsed,
                     canvasAction: result.canvasUpdate ? { type: 'UPDATE', title: result.canvasUpdate.title } : undefined
                 };
@@ -242,6 +246,15 @@ const App: React.FC = () => {
       setProcessingAgentName(null);
   };
 
+  const handleMessageFeedback = async (messageId: string, type: 'UP' | 'DOWN') => {
+      if (user && currentSessionId) {
+          const message = messages.find(m => m.id === messageId);
+          if (message) {
+              await updateMessage(user.uid, currentSessionId, { ...message, feedback: type });
+          }
+      }
+  };
+
   if (loading) return <div className="h-screen bg-white dark:bg-avallen-900 flex items-center justify-center text-gray-900 dark:text-white transition-colors duration-300">Loading...</div>;
   if (!user) return <Auth />;
 
@@ -262,6 +275,7 @@ const App: React.FC = () => {
         onCreateSession={handleCreateSession}
         onToggleKnowledgeBase={() => setIsKBOpen(true)} onOpenHowToUse={() => setIsHowToUseOpen(true)}
         onOpenDirectives={() => setIsDirectivesOpen(true)}
+        onOpenAnalytics={() => setIsAnalyticsOpen(true)}
         onLogout={logOut} onAddAgent={() => { setEditingAgent(null); setIsAgentModalOpen(true); }}
         onEditAgent={(a) => { setEditingAgent(a); setIsAgentModalOpen(true); }}
         isDarkMode={isDarkMode} onToggleTheme={() => setIsDarkMode(!isDarkMode)}
@@ -279,6 +293,7 @@ const App: React.FC = () => {
                         isCanvasOpen={isCanvasOpen} onToggleCanvas={() => setIsCanvasOpen(!isCanvasOpen)}
                         isDevilsAdvocate={isDevilsAdvocate} onToggleDevilsAdvocate={() => setIsDevilsAdvocate(!isDevilsAdvocate)}
                         selectedModel={selectedModel} onSelectModel={setSelectedModel}
+                        onFeedback={handleMessageFeedback}
                     />
                 ) : (
                     <KanbanBoard 
@@ -304,6 +319,13 @@ const App: React.FC = () => {
         directives={directives} 
         onSaveDirective={(d) => user && saveDirective(user.uid, d)} 
         onDeleteDirective={(id) => user && deleteDirective(user.uid, id)} 
+      />
+      <AnalyticsDashboard 
+        isOpen={isAnalyticsOpen} 
+        onClose={() => setIsAnalyticsOpen(false)} 
+        tasks={tasks} 
+        sessions={sessions} 
+        agents={agents} 
       />
     </div>
   );

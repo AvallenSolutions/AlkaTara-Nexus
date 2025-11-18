@@ -62,6 +62,7 @@ const mockAuthEvent = new EventTarget();
 // --- SECURE MOCK IMPLEMENTATION ---
 // This simulates a real database in localStorage so you can't just "log in with anything"
 const MOCK_DB_KEY = 'alkatara_secure_mock_users';
+const MOCK_CURRENT_USER_KEY = 'mockCurrentUser';
 
 const getMockUsers = (): Record<string, any> => {
     try {
@@ -80,17 +81,25 @@ export const signInWithGoogle = async () => {
         console.log("Simulating Google Sign In...");
         await new Promise(resolve => setTimeout(resolve, 1000)); // Fake network delay
         
-        // In mock mode, we auto-create a google user profile
+        // In mock mode, we simulate a google user.
+        // We check if this google user exists in our mock DB to be consistent, or just auto-create.
         const email = "demo-google@alkatara.com";
-        const mockUser = { 
-            uid: 'google-user-' + Date.now(), 
-            email: email, 
-            displayName: 'Google User (Demo)',
-            photoURL: 'https://lh3.googleusercontent.com/a/default-user',
-            providerId: 'google.com'
-        };
+        const users = getMockUsers();
+        let mockUser = users[email];
         
-        localStorage.setItem('mockCurrentUser', JSON.stringify(mockUser));
+        if (!mockUser) {
+             mockUser = { 
+                uid: 'google-user-' + Date.now(), 
+                email: email, 
+                displayName: 'Google User (Demo)',
+                photoURL: 'https://lh3.googleusercontent.com/a/default-user',
+                providerId: 'google.com',
+                createdAt: Date.now()
+            };
+            saveMockUser(email, mockUser);
+        }
+        
+        localStorage.setItem(MOCK_CURRENT_USER_KEY, JSON.stringify(mockUser));
         mockAuthEvent.dispatchEvent(new Event('auth-change'));
         return;
     }
@@ -119,12 +128,13 @@ export const signUpEmail = async (email: string, password: string) => {
             email,
             displayName: email.split('@')[0],
             passwordHash: btoa(password), // Simple encoding for demo (NOT REAL ENCRYPTION)
-            createdAt: Date.now()
+            createdAt: Date.now(),
+            providerId: 'password'
         };
         saveMockUser(email, newUser);
         
         // Auto login after signup
-        localStorage.setItem('mockCurrentUser', JSON.stringify({
+        localStorage.setItem(MOCK_CURRENT_USER_KEY, JSON.stringify({
             uid: newUser.uid,
             email: newUser.email,
             displayName: newUser.displayName
@@ -152,6 +162,12 @@ export const logInEmail = async (email: string, password: string) => {
             throw error;
         }
 
+        if (user.providerId === 'google.com') {
+             const error: any = new Error("Please sign in with Google");
+             error.code = 'auth/wrong-password'; 
+             throw error;
+        }
+
         if (user.passwordHash !== btoa(password)) {
             const error: any = new Error("Wrong password");
             error.code = 'auth/wrong-password';
@@ -159,7 +175,7 @@ export const logInEmail = async (email: string, password: string) => {
         }
 
         // Success
-        localStorage.setItem('mockCurrentUser', JSON.stringify({
+        localStorage.setItem(MOCK_CURRENT_USER_KEY, JSON.stringify({
             uid: user.uid,
             email: user.email,
             displayName: user.displayName
@@ -179,12 +195,8 @@ export const resetPassword = async (email: string) => {
     if (isMock) {
         await new Promise(resolve => setTimeout(resolve, 500));
         const users = getMockUsers();
-        if (!users[email.toLowerCase()]) {
-             const error: any = new Error("User not found");
-             error.code = 'auth/user-not-found';
-             throw error;
-        }
-        console.log(`Mock password reset sent to ${email}`);
+        // In production, we usually don't reveal if a user exists, but for mock we can log it
+        console.log(`Mock password reset requested for ${email}. Exists: ${!!users[email.toLowerCase()]}`);
         return;
     }
     try {
@@ -197,7 +209,7 @@ export const resetPassword = async (email: string) => {
 
 export const logOut = async () => {
     if (isMock) {
-        localStorage.removeItem('mockCurrentUser');
+        localStorage.removeItem(MOCK_CURRENT_USER_KEY);
         mockAuthEvent.dispatchEvent(new Event('auth-change'));
         return;
     }
@@ -215,13 +227,13 @@ export const useAuth = () => {
 
     React.useEffect(() => {
         const checkMockUser = () => {
-            const stored = localStorage.getItem('mockCurrentUser');
+            const stored = localStorage.getItem(MOCK_CURRENT_USER_KEY);
             if (stored) {
                 try {
                     setUser(JSON.parse(stored));
                 } catch (e) {
                     console.error("Failed to parse mock user", e);
-                    localStorage.removeItem('mockCurrentUser');
+                    localStorage.removeItem(MOCK_CURRENT_USER_KEY);
                     setUser(null);
                 }
             } else {

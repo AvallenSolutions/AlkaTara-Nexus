@@ -1,6 +1,6 @@
 
 import { GoogleGenAI, Content, Part, Tool, Type, GenerateContentResponse } from "@google/genai";
-import { Agent, Message, KnowledgeItem, GroundingMetadata, ChartData, Directive } from "../types";
+import { Agent, Message, KnowledgeItem, GroundingMetadata, ChartData, Directive, EmailDraft, CalendarEvent } from "../types";
 
 const apiKey = process.env.API_KEY || ''; 
 const ai = new GoogleGenAI({ apiKey });
@@ -44,6 +44,8 @@ interface AgentResponse {
   groundingMetadata?: GroundingMetadata;
   chartData?: ChartData;
   canvasUpdate?: { title: string; content: string; };
+  emailDraft?: EmailDraft;
+  calendarEvent?: CalendarEvent;
   contextUsed?: string;
 }
 
@@ -140,6 +142,8 @@ export const generateAgentResponse = async (
     - **Action: Create Task**: \`\`\`json { "new_task": { "title": "...", "description": "...", "priority": "...", "assignee": "...", "dueDate": "..." } } \`\`\`
     - **Action: Chart**: \`\`\`json { "chart_data": { "title": "...", "type": "BAR|LINE|PIE", "labels": [], "datasets": [] } } \`\`\`
     - **Action: Update Canvas**: \`\`\`json { "canvas_update": { "title": "...", "content": "..." } } \`\`\`
+    - **Action: Draft Email**: \`\`\`json { "draft_email": { "to": "...", "subject": "...", "body": "..." } } \`\`\`
+    - **Action: Schedule Meeting**: \`\`\`json { "schedule_meeting": { "title": "...", "startTime": "YYYY-MM-DDTHH:MM", "endTime": "YYYY-MM-DDTHH:MM", "description": "...", "location": "..." } } \`\`\`
     
     ${contextInstruction || ''}
   `;
@@ -180,6 +184,8 @@ export const generateAgentResponse = async (
 
     let chartData: ChartData | undefined;
     let canvasUpdate: { title: string; content: string } | undefined;
+    let emailDraft: EmailDraft | undefined;
+    let calendarEvent: CalendarEvent | undefined;
     
     const extractJson = (regex: RegExp, sourceText: string): any | null => {
         const match = sourceText.match(regex);
@@ -192,6 +198,7 @@ export const generateAgentResponse = async (
         return null;
     };
 
+    // Extract Charts
     const chartRegex = /```json\s*(\{[\s\S]*?"chart_data"[\s\S]*?\})\s*```/;
     const chartJson = extractJson(chartRegex, text);
     if (chartJson?.chart_data) {
@@ -199,6 +206,7 @@ export const generateAgentResponse = async (
         text = text.replace(chartRegex, '').trim();
     }
 
+    // Extract Canvas
     const canvasRegex = /```json\s*(\{[\s\S]*?"canvas_update"[\s\S]*?\})\s*```/;
     const canvasJson = extractJson(canvasRegex, text);
     if (canvasJson?.canvas_update) {
@@ -206,13 +214,31 @@ export const generateAgentResponse = async (
         text = text.replace(canvasRegex, '').trim();
         if (text.length < 50) text += "\n\n(I have updated the Canvas with the details.)";
     }
+
+    // Extract Email Drafts
+    const emailRegex = /```json\s*(\{[\s\S]*?"draft_email"[\s\S]*?\})\s*```/;
+    const emailJson = extractJson(emailRegex, text);
+    if (emailJson?.draft_email) {
+        emailDraft = emailJson.draft_email;
+        text = text.replace(emailRegex, '').trim();
+        if (text.length < 50) text += "\n\n(I have drafted an email for you.)";
+    }
+
+    // Extract Calendar Events
+    const calRegex = /```json\s*(\{[\s\S]*?"schedule_meeting"[\s\S]*?\})\s*```/;
+    const calJson = extractJson(calRegex, text);
+    if (calJson?.schedule_meeting) {
+        calendarEvent = calJson.schedule_meeting;
+        text = text.replace(calRegex, '').trim();
+        if (text.length < 50) text += "\n\n(I have prepared a calendar invite.)";
+    }
     
     const groundingMetadata = response.candidates?.[0]?.groundingMetadata as GroundingMetadata | undefined;
 
     // Build a simplified context string for transparency
     const contextSummary = `Model: ${modelName}\nActive Agents: ${activeAgents.map(a => a.name).join(', ')}\nKnowledge Base Size: ${knowledgeBase.length} items\nActive Directives: ${userDirectives.filter(d => d.active).length}\nModes: ${isDeepResearchMode ? 'Deep Research' : ''} ${isDevilsAdvocateMode ? 'Devil\'s Advocate' : ''}`;
 
-    return { text, groundingMetadata, chartData, canvasUpdate, contextUsed: contextSummary };
+    return { text, groundingMetadata, chartData, canvasUpdate, emailDraft, calendarEvent, contextUsed: contextSummary };
 
   } catch (error: any) {
     console.error("Gemini API Error:", error);
