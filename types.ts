@@ -94,6 +94,7 @@ export interface Message {
   calendarEvent?: CalendarEvent;
   feedback?: 'UP' | 'DOWN';
   contextUsed?: string; // For debugging/transparency
+  status?: 'SENDING' | 'SENT' | 'ERROR'; // New field for tracking message state
 }
 
 export interface GroundingMetadata {

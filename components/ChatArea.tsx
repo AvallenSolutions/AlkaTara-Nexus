@@ -342,6 +342,8 @@ const ChatArea: React.FC<ChatAreaProps> = ({
                         
                         <div className={`px-4 py-3 rounded-2xl shadow-sm text-sm leading-relaxed w-full relative transition-colors duration-300
                             ${msg.isUser ? 'bg-avallen-accent text-white rounded-tr-none' : 'bg-white dark:bg-avallen-800 border border-gray-200 dark:border-avallen-700 text-gray-800 dark:text-slate-200 rounded-tl-none'}
+                            ${msg.status === 'SENDING' ? 'opacity-70' : ''}
+                            ${msg.status === 'ERROR' ? 'border-red-500 dark:border-red-500' : ''}
                         `}>
                             {/* Context Indicator */}
                             {msg.contextUsed && (
@@ -412,6 +414,18 @@ const ChatArea: React.FC<ChatAreaProps> = ({
                                             <i className="fa-solid fa-rotate-right"></i> Regenerate
                                         </button>
                                     )}
+                                </div>
+                            )}
+
+                            {/* Error / Status State */}
+                            {msg.status === 'ERROR' && (
+                                <div className="absolute -bottom-6 right-0 text-xs text-red-500 font-bold flex items-center gap-1 bg-white dark:bg-avallen-800 px-1 rounded">
+                                    <i className="fa-solid fa-circle-exclamation"></i> Failed to send
+                                </div>
+                            )}
+                            {msg.status === 'SENDING' && (
+                                <div className="absolute -bottom-5 right-0 text-[10px] text-gray-400 italic">
+                                    Sending...
                                 </div>
                             )}
                         </div>

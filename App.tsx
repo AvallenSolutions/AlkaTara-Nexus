@@ -120,9 +120,27 @@ const App: React.FC = () => {
   // Load messages for current session
   useEffect(() => {
     if (!user || !currentSessionId) return;
-    setMessages([]); 
-    const unsub = listenToMessages(user.uid, currentSessionId, setMessages);
-    return () => unsub();
+    // Don't just setMessages([]) blindly, it causes flashing. 
+    // Only clear if we are actually switching sessions to avoid ghosting during re-renders.
+    // However, the listener will handle the update.
+    
+    const unsub = listenToMessages(user.uid, currentSessionId, (serverMsgs) => {
+        setMessages(current => {
+            // Merge Logic: 
+            // Keep any local messages that are SENDING or ERROR if they aren't in the server list yet.
+            // This prevents messages from "disappearing" if Firestore write fails or is slow.
+            const localPending = current.filter(m => (m.status === 'SENDING' || m.status === 'ERROR') && !serverMsgs.find(s => s.id === m.id));
+            
+            // If a message was SENDING and now appears in serverMsgs, the server version (without status) takes precedence.
+            
+            const merged = [...serverMsgs, ...localPending].sort((a, b) => a.timestamp - b.timestamp);
+            return merged;
+        });
+    });
+    return () => {
+        setMessages([]); // Clear on unmount/switch
+        unsub();
+    };
   }, [user, currentSessionId]);
 
   // Update mode when session changes
@@ -223,11 +241,26 @@ const App: React.FC = () => {
 
     const userMsg: Message = {
       id: generateId(), senderId: user.uid, senderName: user.displayName || 'User',
-      content: text, timestamp: Date.now(), isUser: true, attachments
+      content: text, timestamp: Date.now(), isUser: true, attachments,
+      status: 'SENDING' // Initial status
     };
 
+    // 1. Optimistic Update
     setMessages(prev => [...prev, userMsg]);
-    await addMessage(user.uid, currentSessionId, userMsg);
+
+    // 2. Try to save to DB
+    try {
+        await addMessage(user.uid, currentSessionId, userMsg);
+        // If successful, we update the local status to 'undefined' (SENT)
+        // This gives immediate feedback before snapshot listener fires
+        setMessages(prev => prev.map(m => m.id === userMsg.id ? { ...m, status: undefined } : m));
+    } catch (error) {
+        console.error("Failed to send message:", error);
+        // Mark as error so it doesn't disappear and user knows
+        setMessages(prev => prev.map(m => m.id === userMsg.id ? { ...m, status: 'ERROR' } : m));
+        return; // STOP here if message failed. Do not generate agent response.
+    }
+    
     if (isHuddle) setIsHuddle(true); 
 
     // Mentions logic
@@ -243,7 +276,9 @@ const App: React.FC = () => {
     
     if (targetAgents.length === 0) targetAgents = [currentAgents[0]];
 
-    const currentHistory = [...messages, userMsg];
+    // Ensure we include the latest message in history for context
+    // Filter out any error messages from context
+    const currentHistory = [...messages.filter(m => m.status !== 'ERROR'), { ...userMsg, status: undefined }];
     abortControllerRef.current = new AbortController();
 
     try {
@@ -307,8 +342,12 @@ const App: React.FC = () => {
                     canvasAction: result.canvasUpdate ? { type: 'UPDATE', title: result.canvasUpdate.title } : undefined
                 };
 
-                await addMessage(user.uid, currentSessionId, agentMsg);
-                currentHistory.push(agentMsg); 
+                try {
+                    await addMessage(user.uid, currentSessionId, agentMsg);
+                    currentHistory.push(agentMsg); 
+                } catch (e) {
+                    console.error("Failed to save agent message", e);
+                }
 
             } catch (e) { console.error(e); }
         }

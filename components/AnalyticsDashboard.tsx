@@ -96,7 +96,7 @@ const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({ isOpen, onClose
                 <div className="flex items-end justify-around h-40 gap-4">
                     {agents.map(agent => {
                         const count = stats.agentTaskCounts[agent.name] || 0;
-                        const max = Math.max(...Object.values(stats.agentTaskCounts), 1);
+                        const max = Math.max(...(Object.values(stats.agentTaskCounts) as number[]), 1);
                         const height = Math.max((count / max) * 100, 5); // Min 5% height
                         
                         return (

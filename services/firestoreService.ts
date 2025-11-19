@@ -297,6 +297,10 @@ export const listenToMessages = (userId: string, sessionId: string, callback: (m
   return onSnapshot(q, (snapshot) => {
     const messages = snapshot.docs.map(d => d.data() as Message);
     callback(messages);
+  }, (error) => {
+      console.error("Error listening to messages:", error);
+      // We don't want to crash the app if permission denied or network error
+      // The UI handles local state separately in App.tsx
   });
 };
 
@@ -319,7 +323,9 @@ export const addMessage = async (userId: string, sessionId: string, message: Mes
   }
 
   const ref = doc(collection(db, 'users', userId, 'sessions', sessionId, 'messages'), message.id);
-  await setDoc(ref, message);
+  // Sanitize message: Remove 'status' as that is a local-only field
+  const { status, ...dbMessage } = message;
+  await setDoc(ref, dbMessage);
   
   // Update session timestamp
   const sessionRef = doc(db, 'users', userId, 'sessions', sessionId);
@@ -338,7 +344,8 @@ export const updateMessage = async (userId: string, sessionId: string, message: 
         return;
     }
     const ref = doc(collection(db, 'users', userId, 'sessions', sessionId, 'messages'), message.id);
-    await setDoc(ref, message, { merge: true });
+    const { status, ...dbMessage } = message;
+    await setDoc(ref, dbMessage, { merge: true });
 };
 
 export const addKnowledgeItem = async (userId: string, item: KnowledgeItem) => {

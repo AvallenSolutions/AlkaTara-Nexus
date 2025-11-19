@@ -12,7 +12,8 @@ const Auth: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
   
   const [error, setError] = useState<string | null>(null);
-  const [configError, setConfigError] = useState(false); // New state for missing config
+  const [configError, setConfigError] = useState(false); 
+  const [domainError, setDomainError] = useState(false); // Added state for unauthorized domain
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -22,6 +23,7 @@ const Auth: React.FC = () => {
   const clearState = () => {
     setError(null);
     setConfigError(false);
+    setDomainError(false);
     setSuccessMessage(null);
     setIsLoading(false);
   };
@@ -48,6 +50,8 @@ const Auth: React.FC = () => {
         return "Too many failed attempts. Reset password or try later.";
       case 'auth/network-request-failed':
         return "Network error. Check your internet connection.";
+      case 'auth/unauthorized-domain':
+        return "DOMAIN_ERROR";
       default:
         return `Error: ${error.message}`;
     }
@@ -86,6 +90,8 @@ const Auth: React.FC = () => {
       const msg = getErrorMessage(err);
       if (msg === 'FIREBASE_CONFIG_MISSING') {
           setConfigError(true);
+      } else if (msg === 'DOMAIN_ERROR' || err.code === 'auth/unauthorized-domain') {
+          setDomainError(true);
       } else {
           setError(msg);
       }
@@ -115,6 +121,8 @@ const Auth: React.FC = () => {
         const msg = getErrorMessage(err);
         if (msg === 'FIREBASE_CONFIG_MISSING') {
             setConfigError(true);
+        } else if (msg === 'DOMAIN_ERROR' || err.code === 'auth/unauthorized-domain') {
+            setDomainError(true);
         } else {
             setError(msg);
         }
@@ -151,7 +159,45 @@ const Auth: React.FC = () => {
             <p className="text-gray-500 dark:text-slate-400 mt-2 text-sm">Secure C-Suite Platform</p>
         </div>
 
-        {configError ? (
+        {domainError ? (
+            <div className="animate-fade-in text-center space-y-4">
+                 <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 p-4 rounded-xl">
+                     <i className="fa-solid fa-globe text-yellow-500 text-2xl mb-2"></i>
+                     <h3 className="font-bold text-yellow-600 dark:text-yellow-300">Unauthorized Domain</h3>
+                     <p className="text-xs text-yellow-600/80 dark:text-yellow-300/80 mt-1">
+                         The current domain ({typeof window !== 'undefined' ? window.location.hostname : 'unknown'}) is not authorized in your Firebase Console.
+                     </p>
+                 </div>
+                 
+                 <p className="text-xs text-gray-500 dark:text-slate-400">
+                     To fix this in Production, go to <strong>Firebase Console &gt; Authentication &gt; Settings &gt; Authorized Domains</strong> and add this domain.
+                 </p>
+
+                 <div className="relative my-4">
+                    <div className="absolute inset-0 flex items-center">
+                        <div className="w-full border-t border-gray-200 dark:border-avallen-700"></div>
+                    </div>
+                    <div className="relative flex justify-center">
+                        <span className="px-2 bg-white dark:bg-avallen-800 text-xs text-gray-400 dark:text-slate-500 font-medium">OR</span>
+                    </div>
+                </div>
+                <button 
+                    onClick={enableDemoMode}
+                    className="w-full bg-amber-500 hover:bg-amber-600 text-white font-bold py-3 rounded-lg shadow-md transition-colors flex items-center justify-center gap-2"
+                >
+                    <i className="fa-solid fa-flask"></i> Switch to Demo Mode
+                </button>
+                <p className="text-[10px] text-gray-400 dark:text-slate-500 mt-2">
+                    This enables a local mock database for testing without Firebase restrictions.
+                </p>
+                 <button 
+                    onClick={() => { setDomainError(false); }}
+                    className="text-xs text-gray-400 hover:text-gray-600 dark:text-slate-500 dark:hover:text-white mt-4"
+                 >
+                     Go back
+                 </button>
+             </div>
+        ) : configError ? (
              <div className="animate-fade-in text-center space-y-4">
                  <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 p-4 rounded-xl">
                      <i className="fa-solid fa-triangle-exclamation text-red-500 text-2xl mb-2"></i>
