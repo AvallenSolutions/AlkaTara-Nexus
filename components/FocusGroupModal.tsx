@@ -1,38 +1,48 @@
 
 import React, { useState, useEffect } from 'react';
-import { Agent } from '../types';
+import { Agent, ChatMode } from '../types';
 
 interface FocusGroupModalProps {
   isOpen: boolean;
   onClose: () => void;
+  mode: ChatMode; // INDIVIDUAL or FOCUS_GROUP
   agents: Agent[];
   onCreate: (name: string, selectedAgentIds: string[]) => void;
 }
 
-const FocusGroupModal: React.FC<FocusGroupModalProps> = ({ isOpen, onClose, agents, onCreate }) => {
+const FocusGroupModal: React.FC<FocusGroupModalProps> = ({ isOpen, onClose, mode, agents, onCreate }) => {
   const [groupName, setGroupName] = useState('');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
+  const isIndividual = mode === ChatMode.INDIVIDUAL;
+
   useEffect(() => {
     if (isOpen) {
-      setGroupName(`Focus Group ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`);
-      // Default to selecting the first 2 agents if none selected, or just clear
+      setGroupName(isIndividual ? 'New Chat' : `Focus Group ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`);
       setSelectedIds([]); 
     }
-  }, [isOpen]);
+  }, [isOpen, mode]);
 
   const toggleAgent = (id: string) => {
-    setSelectedIds(prev => 
-      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
-    );
+    if (isIndividual) {
+        // Single select behavior
+        setSelectedIds([id]);
+    } else {
+        // Multi select behavior
+        setSelectedIds(prev => 
+          prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+        );
+    }
   };
 
   const handleCreate = () => {
     if (selectedIds.length === 0) {
-        alert("Please select at least one agent.");
+        alert("Please select an agent.");
         return;
     }
-    onCreate(groupName, selectedIds);
+    // For individual chat, name is irrelevant (handled by App.tsx usually, but we pass something)
+    const finalName = isIndividual ? `Chat with ${agents.find(a => a.id === selectedIds[0])?.name}` : groupName;
+    onCreate(finalName, selectedIds);
   };
 
   if (!isOpen) return null;
@@ -45,9 +55,9 @@ const FocusGroupModal: React.FC<FocusGroupModalProps> = ({ isOpen, onClose, agen
         <div className="p-6 border-b border-gray-200 dark:border-avallen-700 flex justify-between items-center bg-white dark:bg-avallen-800 z-10 rounded-t-xl">
           <h2 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
             <div className="w-10 h-10 bg-avallen-accent rounded-lg flex items-center justify-center shadow-lg shadow-avallen-accent/20">
-               <i className="fa-solid fa-users-viewfinder text-white"></i>
+               <i className={`fa-solid ${isIndividual ? 'fa-user-plus' : 'fa-users-viewfinder'} text-white`}></i>
             </div>
-            Create Focus Group
+            {isIndividual ? 'Start New Chat' : 'Create Focus Group'}
           </h2>
           <button onClick={onClose} className="text-gray-400 dark:text-slate-400 hover:text-gray-600 dark:hover:text-white transition-colors">
             <i className="fa-solid fa-times text-xl"></i>
@@ -57,24 +67,26 @@ const FocusGroupModal: React.FC<FocusGroupModalProps> = ({ isOpen, onClose, agen
         {/* Content */}
         <div className="p-6 flex-1 overflow-y-auto">
             
-            {/* Name Input */}
-            <div className="mb-6">
-                <label className="block text-xs font-bold text-gray-500 dark:text-slate-400 uppercase mb-2">Group Name</label>
-                <input 
-                    type="text" 
-                    value={groupName}
-                    onChange={(e) => setGroupName(e.target.value)}
-                    className="w-full bg-gray-50 dark:bg-avallen-900 border border-gray-300 dark:border-avallen-600 rounded-lg p-3 text-gray-900 dark:text-white outline-none focus:border-avallen-accent focus:ring-1 focus:ring-avallen-accent font-medium"
-                    placeholder="e.g. Marketing Strategy Huddle"
-                    autoFocus
-                />
-            </div>
+            {/* Name Input (Focus Group Only) */}
+            {!isIndividual && (
+                <div className="mb-6">
+                    <label className="block text-xs font-bold text-gray-500 dark:text-slate-400 uppercase mb-2">Group Name</label>
+                    <input 
+                        type="text" 
+                        value={groupName}
+                        onChange={(e) => setGroupName(e.target.value)}
+                        className="w-full bg-gray-50 dark:bg-avallen-900 border border-gray-300 dark:border-avallen-600 rounded-lg p-3 text-gray-900 dark:text-white outline-none focus:border-avallen-accent focus:ring-1 focus:ring-avallen-accent font-medium"
+                        placeholder="e.g. Marketing Strategy Huddle"
+                        autoFocus
+                    />
+                </div>
+            )}
 
             {/* Agent Selection */}
             <div>
                 <label className="block text-xs font-bold text-gray-500 dark:text-slate-400 uppercase mb-3 flex justify-between">
-                    <span>Select Agents ({selectedIds.length})</span>
-                    {selectedIds.length === 0 && <span className="text-red-400 italic font-normal normal-case">* Select at least one</span>}
+                    <span>Select {isIndividual ? 'Agent' : `Agents (${selectedIds.length})`}</span>
+                    {selectedIds.length === 0 && <span className="text-red-400 italic font-normal normal-case">* Select {isIndividual ? 'one' : 'at least one'}</span>}
                 </label>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                     {agents.map(agent => {
@@ -110,10 +122,10 @@ const FocusGroupModal: React.FC<FocusGroupModalProps> = ({ isOpen, onClose, agen
             <button onClick={onClose} className="px-4 py-2 text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white text-sm font-medium transition-colors">Cancel</button>
             <button 
                 onClick={handleCreate}
-                disabled={selectedIds.length === 0 || !groupName.trim()}
+                disabled={selectedIds.length === 0 || (!isIndividual && !groupName.trim())}
                 className="px-6 py-2 bg-avallen-accent hover:bg-sky-500 text-white font-bold rounded-lg shadow-lg shadow-avallen-accent/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
             >
-                <i className="fa-solid fa-plus"></i> Create Focus Group
+                <i className={`fa-solid ${isIndividual ? 'fa-comments' : 'fa-plus'}`}></i> {isIndividual ? 'Start Chat' : 'Create Focus Group'}
             </button>
         </div>
 

@@ -9,9 +9,11 @@ import {
   orderBy, 
   writeBatch,
   getDocs,
+  getDoc,
   Timestamp,
   updateDoc
 } from 'firebase/firestore';
+import { User } from 'firebase/auth';
 import { db, isMock } from './firebase';
 import { Agent, Message, KnowledgeItem, Task, TaskStatus, Folder, ChatSession, Directive } from '../types';
 import { INITIAL_AGENTS, MOCK_KNOWLEDGE_BASE } from '../constants';
@@ -20,10 +22,55 @@ import { INITIAL_AGENTS, MOCK_KNOWLEDGE_BASE } from '../constants';
 const getMockData = (key: string) => JSON.parse(localStorage.getItem(key) || '[]');
 const setMockData = (key: string, data: any) => localStorage.setItem(key, JSON.stringify(data));
 
+// --- USER PROFILE MANAGEMENT ---
+
+export const readUserData = async (userId: string) => {
+  if (isMock) {
+      return getMockData(`avallen_${userId}_profile`) || null;
+  }
+  try {
+    const userDocRef = doc(db, "users", userId);
+    const userDocSnap = await getDoc(userDocRef);
+    if (userDocSnap.exists()) {
+      return userDocSnap.data();
+    } else {
+      return null;
+    }
+  } catch (error) {
+    console.error("Error reading user data:", error);
+    return null;
+  }
+};
+
+export const writeUserData = async (userId: string, dataToSave: { displayName?: string | null; email?: string | null; [key: string]: any }) => {
+  if (isMock) {
+      const current = getMockData(`avallen_${userId}_profile`) || {};
+      setMockData(`avallen_${userId}_profile`, { ...current, ...dataToSave, uid: userId });
+      return;
+  }
+  
+  const userDocRef = doc(db, "users", userId);
+  try {
+    await setDoc(userDocRef, dataToSave, { merge: true });
+  } catch (error) {
+    console.error("Error writing user data:", error);
+  }
+};
+
 /**
  * Seeds the database with initial agents and knowledge base if they don't exist for the user.
+ * Also syncs the user profile data.
  */
-export const initializeUserData = async (userId: string) => {
+export const initializeUserData = async (user: User) => {
+  const userId = user.uid;
+
+  // Sync User Profile
+  await writeUserData(userId, {
+      displayName: user.displayName,
+      email: user.email,
+      lastLogin: Date.now()
+  });
+
   if (isMock) {
       // Seed local storage if empty
       if (getMockData(`avallen_${userId}_agents`).length === 0) {

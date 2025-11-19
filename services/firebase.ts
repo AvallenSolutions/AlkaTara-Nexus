@@ -1,5 +1,6 @@
 
 import { initializeApp, getApps, FirebaseApp } from 'firebase/app';
+import { getAnalytics } from "firebase/analytics";
 import { 
   getAuth, 
   Auth, 
@@ -19,48 +20,83 @@ import React from 'react';
 
 // Access globals safely
 const win = window as any;
+
+// Configuration from snippet
 const firebaseConfig = win.__firebase_config || {
-  apiKey: process.env.FIREBASE_API_KEY || "mock-key",
-  authDomain: process.env.FIREBASE_AUTH_DOMAIN || "mock-domain",
-  projectId: process.env.FIREBASE_PROJECT_ID || "mock-project",
-  storageBucket: "mock-bucket",
-  messagingSenderId: "123",
-  appId: win.__app_id || "1:123:web:456"
+  apiKey: process.env.FIREBASE_API_KEY || "AIzaSyBQaZ55RPKFHgZ90Xbh4SpIu9IrP1E--iY",
+  authDomain: process.env.FIREBASE_AUTH_DOMAIN || "alkatara-nexus.firebaseapp.com",
+  projectId: process.env.FIREBASE_PROJECT_ID || "alkatara-nexus",
+  storageBucket: process.env.FIREBASE_STORAGE_BUCKET || "alkatara-nexus.firebasestorage.app",
+  messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID || "795944217054",
+  appId: process.env.FIREBASE_APP_ID || "1:795944217054:web:9333ce07fdd4a579bbd54f",
+  measurementId: "G-JCV66BGLQV"
 };
 
 let app: FirebaseApp;
 let auth: Auth;
 let db: Firestore;
+let analytics: any;
 
-// Simple check to see if we are in a real firebase environment or need to mock
-export const isMock = firebaseConfig.apiKey === "mock-key" || !firebaseConfig.apiKey;
+// Allow manual override via LocalStorage for testing
+const forceDemo = typeof window !== 'undefined' ? window.localStorage.getItem('alkatara_force_demo') === 'true' : false;
+
+// Check for Dev/Preview environments
+const isDevEnvironment = typeof window !== 'undefined' && (
+    window.location.hostname === 'localhost' || 
+    window.location.hostname === '127.0.0.1' ||
+    window.location.hostname.includes('stackblitz') || 
+    window.location.hostname.includes('webcontainer') ||
+    window.location.hostname.includes('bolt') ||
+    window.location.hostname.includes('repl') ||
+    window.location.hostname.includes('sandbox')
+);
+
+const keysMissing = !firebaseConfig.apiKey;
+
+// Mock mode enabled if:
+// 1. DEMO_MODE env var is true
+// 2. Manually forced via UI
+// 3. We are in a DEV environment AND keys are missing
+export const isMock = process.env.DEMO_MODE === 'true' || forceDemo || (isDevEnvironment && keysMissing);
 
 if (!getApps().length && !isMock) {
   try {
-    app = initializeApp(firebaseConfig);
-    auth = getAuth(app);
-    db = getFirestore(app);
-    // Ensure persistence is set to local (default, but explicit is safer)
-    setPersistence(auth, browserLocalPersistence).catch((error) => {
-        console.error("Firebase persistence error:", error);
-    });
+    if (keysMissing) {
+        console.error("Firebase Configuration Missing: FIREBASE_API_KEY is not set.");
+    } else {
+        app = initializeApp(firebaseConfig);
+        auth = getAuth(app);
+        db = getFirestore(app);
+        if (typeof window !== 'undefined') {
+          analytics = getAnalytics(app);
+        }
+        
+        // Ensure persistence is set to local
+        setPersistence(auth, browserLocalPersistence).catch((error) => {
+            console.error("Firebase persistence error:", error);
+        });
+    }
   } catch (e) {
     console.error("Firebase Initialization Error:", e);
-    console.warn("Falling back to Mock Mode due to configuration error.");
-    // @ts-ignore
-    exports.isMock = true;
   }
 } else if (isMock) {
-    console.warn("Running in Mock Firebase Mode - No API Keys Detected");
+    console.warn("Running in EXPLICIT DEMO MODE (Mock Data)");
 }
 
 export { auth, db };
 
+// Helper to enable demo mode from UI
+export const enableDemoMode = () => {
+    if (typeof window !== 'undefined') {
+        window.localStorage.setItem('alkatara_force_demo', 'true');
+        window.location.reload();
+    }
+};
+
 // Event Emitter for Mock Auth updates
 const mockAuthEvent = new EventTarget();
 
-// --- SECURE MOCK IMPLEMENTATION ---
-// This simulates a real database in localStorage so you can't just "log in with anything"
+// --- SECURE MOCK IMPLEMENTATION (Only active if isMock is true) ---
 const MOCK_DB_KEY = 'alkatara_secure_mock_users';
 const MOCK_CURRENT_USER_KEY = 'mockCurrentUser';
 
@@ -81,8 +117,6 @@ export const signInWithGoogle = async () => {
         console.log("Simulating Google Sign In...");
         await new Promise(resolve => setTimeout(resolve, 1000)); // Fake network delay
         
-        // In mock mode, we simulate a google user.
-        // We check if this google user exists in our mock DB to be consistent, or just auto-create.
         const email = "demo-google@alkatara.com";
         const users = getMockUsers();
         let mockUser = users[email];
@@ -104,6 +138,7 @@ export const signInWithGoogle = async () => {
         return;
     }
     try {
+        if (!auth) throw new Error("Firebase Auth not initialized. Check configuration.");
         const provider = new GoogleAuthProvider();
         return await signInWithPopup(auth, provider);
     } catch (error) {
@@ -122,18 +157,16 @@ export const signUpEmail = async (email: string, password: string) => {
             throw error;
         }
         
-        // Save user "securely" (simple hash simulation)
         const newUser = {
             uid: 'user-' + Math.random().toString(36).substr(2, 9),
             email,
             displayName: email.split('@')[0],
-            passwordHash: btoa(password), // Simple encoding for demo (NOT REAL ENCRYPTION)
+            passwordHash: btoa(password), // Simple encoding for demo
             createdAt: Date.now(),
             providerId: 'password'
         };
         saveMockUser(email, newUser);
         
-        // Auto login after signup
         localStorage.setItem(MOCK_CURRENT_USER_KEY, JSON.stringify({
             uid: newUser.uid,
             email: newUser.email,
@@ -143,6 +176,7 @@ export const signUpEmail = async (email: string, password: string) => {
         return;
     }
     try {
+        if (!auth) throw new Error("Firebase Auth not initialized.");
         return await createUserWithEmailAndPassword(auth, email, password);
     } catch (error) {
         console.error("Error during sign up:", error);
@@ -174,7 +208,6 @@ export const logInEmail = async (email: string, password: string) => {
             throw error;
         }
 
-        // Success
         localStorage.setItem(MOCK_CURRENT_USER_KEY, JSON.stringify({
             uid: user.uid,
             email: user.email,
@@ -184,6 +217,7 @@ export const logInEmail = async (email: string, password: string) => {
         return;
     }
     try {
+        if (!auth) throw new Error("Firebase Auth not initialized.");
         return await signInWithEmailAndPassword(auth, email, password);
     } catch (error) {
         console.error("Error during login:", error);
@@ -194,12 +228,11 @@ export const logInEmail = async (email: string, password: string) => {
 export const resetPassword = async (email: string) => {
     if (isMock) {
         await new Promise(resolve => setTimeout(resolve, 500));
-        const users = getMockUsers();
-        // In production, we usually don't reveal if a user exists, but for mock we can log it
-        console.log(`Mock password reset requested for ${email}. Exists: ${!!users[email.toLowerCase()]}`);
+        console.log(`Mock password reset requested for ${email}.`);
         return;
     }
     try {
+        if (!auth) throw new Error("Firebase Auth not initialized.");
         await sendPasswordResetEmail(auth, email);
     } catch (error) {
         console.error("Error sending password reset:", error);
@@ -214,7 +247,7 @@ export const logOut = async () => {
         return;
     }
     try {
-        await signOut(auth);
+        if (auth) await signOut(auth);
     } catch (error) {
         console.error("Error during sign out:", error);
     }
@@ -226,23 +259,22 @@ export const useAuth = () => {
     const [loading, setLoading] = React.useState(true);
 
     React.useEffect(() => {
-        const checkMockUser = () => {
-            const stored = localStorage.getItem(MOCK_CURRENT_USER_KEY);
-            if (stored) {
-                try {
-                    setUser(JSON.parse(stored));
-                } catch (e) {
-                    console.error("Failed to parse mock user", e);
-                    localStorage.removeItem(MOCK_CURRENT_USER_KEY);
+        if (isMock) {
+            const checkMockUser = () => {
+                const stored = localStorage.getItem(MOCK_CURRENT_USER_KEY);
+                if (stored) {
+                    try {
+                        setUser(JSON.parse(stored));
+                    } catch (e) {
+                        console.error("Failed to parse mock user", e);
+                        localStorage.removeItem(MOCK_CURRENT_USER_KEY);
+                        setUser(null);
+                    }
+                } else {
                     setUser(null);
                 }
-            } else {
-                setUser(null);
-            }
-            setLoading(false);
-        };
-
-        if (isMock) {
+                setLoading(false);
+            };
             checkMockUser();
             const handler = () => checkMockUser();
             mockAuthEvent.addEventListener('auth-change', handler);

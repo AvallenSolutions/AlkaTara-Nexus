@@ -55,7 +55,8 @@ const App: React.FC = () => {
   const [isHowToUseOpen, setIsHowToUseOpen] = useState(false); 
   const [isDirectivesOpen, setIsDirectivesOpen] = useState(false);
   const [isAnalyticsOpen, setIsAnalyticsOpen] = useState(false);
-  const [isFocusGroupModalOpen, setIsFocusGroupModalOpen] = useState(false);
+  const [isSessionModalOpen, setIsSessionModalOpen] = useState(false);
+  const [sessionModalMode, setSessionModalMode] = useState<ChatMode>(ChatMode.FOCUS_GROUP);
   const [editingAgent, setEditingAgent] = useState<Agent | null>(null);
   
   // Model Selection (Default: Flash)
@@ -76,7 +77,7 @@ const App: React.FC = () => {
       }
   }, [isDarkMode]);
 
-  useEffect(() => { if (user) initializeUserData(user.uid); }, [user]);
+  useEffect(() => { if (user) initializeUserData(user); }, [user]);
 
   useEffect(() => {
     if (!user) return;
@@ -94,26 +95,21 @@ const App: React.FC = () => {
     const un4 = listenToTasks(u, setTasks);
     const un5 = listenToUserSessions(u, (data) => {
         setSessions(data);
-        // Robust session initialization - wait for data
     });
     const un6 = listenToDirectives(u, setDirectives);
 
     return () => { un1(); un2(); un3(); un4(); un5(); un6(); };
   }, [user]);
 
-  // Separate effect for session initialization to prevent race conditions
+  // Separate effect for session initialization
   useEffect(() => {
       if (!user || currentSessionId || sessions.length > 0) return;
-      // Only create a new session if we have loaded sessions and there are none
-      // We rely on the session listener to trigger this check once data is loaded
-      // However, we need to be careful not to trigger this before data is loaded.
-      // In this simplified app, listenToUserSessions returns [] immediately if empty.
-      
-      // Check if we have initialized? We can assume if agents are loaded, we are somewhat ready.
-      if (sessions.length === 0) {
-           handleCreateSession(ChatMode.INDIVIDUAL);
+      if (sessions.length === 0 && agents.length > 0) {
+           // Don't auto create here to avoid loops, sidebar handles init
+           // But if truly empty, maybe create one?
+           // handleCreateSession(ChatMode.INDIVIDUAL); 
       }
-  }, [sessions, user]);
+  }, [sessions, user, agents]);
   
   useEffect(() => {
       if (!currentSessionId && sessions.length > 0) {
@@ -124,14 +120,12 @@ const App: React.FC = () => {
   // Load messages for current session
   useEffect(() => {
     if (!user || !currentSessionId) return;
-    // Optimistic updates handled in handleSendMessage, but we clear on session switch
-    // Only clear if switching to a DIFFERENT session to avoid flash
     setMessages([]); 
     const unsub = listenToMessages(user.uid, currentSessionId, setMessages);
     return () => unsub();
   }, [user, currentSessionId]);
 
-  // Separate effect to update mode when session changes
+  // Update mode when session changes
   useEffect(() => {
       if (!currentSessionId || sessions.length === 0) return;
       const session = sessions.find(s => s.id === currentSessionId);
@@ -144,65 +138,72 @@ const App: React.FC = () => {
       }
   }, [currentSessionId, sessions]);
 
-  const handleCreateSession = async (mode: ChatMode) => {
-      if (!user) return;
-      
-      if (mode === ChatMode.FOCUS_GROUP) {
-          setIsFocusGroupModalOpen(true);
-          return;
-      }
+  // Helper to create actual session in DB
+  const executeCreateSession = async (mode: ChatMode, participantIds: string[], title?: string) => {
+       if (!user) return;
+       const newId = generateId();
+       const finalTitle = title || `Chat ${new Date().toLocaleTimeString()}`;
 
-      const newId = generateId();
-      const title = `New ${mode === ChatMode.INDIVIDUAL ? 'Chat' : 'Board Meeting'} ${new Date().toLocaleTimeString()}`;
-      
-      // CRITICAL FIX: Fallback to INITIAL_AGENTS if state is empty to prevent crash
-      let availableAgents = agents.length > 0 ? agents : INITIAL_AGENTS;
-      // Extra safety check
-      if (!availableAgents || availableAgents.length === 0) {
-          console.warn("No agents available, using fallback.");
-          availableAgents = INITIAL_AGENTS; 
-      }
-
-      const initialParticipants = mode === ChatMode.WHOLE_SUITE 
-        ? availableAgents.map(a => a.id) 
-        : [availableAgents[0]?.id || 'cto']; // Safe fallback
-      
-      await createNewSession(user.uid, {
+       await createNewSession(user.uid, {
           id: newId,
           userId: user.uid,
-          title,
+          title: finalTitle,
           mode,
-          participantIds: initialParticipants,
+          participantIds,
           createdAt: Date.now(),
           lastMessageAt: Date.now()
       });
+      
       setCurrentSessionId(newId);
       setChatMode(mode);
-      setSelectedAgentIds(initialParticipants);
-      setViewMode('CHAT');
-      setIsMobileMenuOpen(false);
-  };
-
-  const handleCreateFocusGroup = async (name: string, participantIds: string[]) => {
-      if (!user) return;
-      const newId = generateId();
-      
-      await createNewSession(user.uid, {
-          id: newId,
-          userId: user.uid,
-          title: name,
-          mode: ChatMode.FOCUS_GROUP,
-          participantIds: participantIds,
-          createdAt: Date.now(),
-          lastMessageAt: Date.now()
-      });
-      
-      setCurrentSessionId(newId);
-      setChatMode(ChatMode.FOCUS_GROUP);
       setSelectedAgentIds(participantIds);
       setViewMode('CHAT');
       setIsMobileMenuOpen(false);
-      setIsFocusGroupModalOpen(false);
+      setIsSessionModalOpen(false);
+  };
+
+  const handleCreateSession = async (mode: ChatMode) => {
+      if (!user) return;
+      
+      if (mode === ChatMode.INDIVIDUAL || mode === ChatMode.FOCUS_GROUP) {
+          setSessionModalMode(mode);
+          setIsSessionModalOpen(true);
+          return;
+      }
+
+      // Whole C-Suite (auto-create)
+      let availableAgents = agents.length > 0 ? agents : INITIAL_AGENTS;
+      const allAgentIds = availableAgents.map(a => a.id);
+      await executeCreateSession(mode, allAgentIds, `Board Meeting ${new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}`);
+  };
+
+  const handleSessionModalCreate = (name: string, participantIds: string[]) => {
+      executeCreateSession(sessionModalMode, participantIds, name);
+  };
+
+  // Logic when clicking an agent in the sidebar
+  const handleAgentSelect = (agentId: string) => {
+      if (chatMode === ChatMode.INDIVIDUAL) {
+          // INTELLIGENT SWITCHING:
+          // 1. Check if we have an existing INDIVIDUAL session with this agent
+          const existingSession = sessions.find(s => 
+              s.mode === ChatMode.INDIVIDUAL && 
+              s.participantIds.includes(agentId) && 
+              s.participantIds.length === 1
+          );
+
+          if (existingSession) {
+              setCurrentSessionId(existingSession.id);
+              // Selected agents update handled by useEffect on currentSessionId
+          } else {
+              // 2. If not, create a new one
+              const agent = agents.find(a => a.id === agentId) || INITIAL_AGENTS.find(a => a.id === agentId);
+              executeCreateSession(ChatMode.INDIVIDUAL, [agentId], `Chat with ${agent?.name || 'Agent'}`);
+          }
+      } else {
+          // In Focus Group / Board mode, we just toggle them in the current room (Huddle style)
+          setSelectedAgentIds(prev => prev.includes(agentId) ? (prev.length > 1 ? prev.filter(x=>x!==agentId) : prev) : [...prev, agentId]);
+      }
   };
 
   const handleSendMessage = async (text: string, attachments: Attachment[]) => {
@@ -210,7 +211,12 @@ const App: React.FC = () => {
     
     // Slash Commands
     if (text.startsWith('/')) {
-        if (text === '/clear') { handleCreateSession(chatMode); return; }
+        if (text === '/clear') { 
+            // Re-create current session type
+            const currentSession = sessions.find(s => s.id === currentSessionId);
+            if (currentSession) executeCreateSession(currentSession.mode, currentSession.participantIds, currentSession.title);
+            return; 
+        }
         if (text === '/kb') { setIsKBOpen(true); return; }
         if (text === '/reset') { window.location.reload(); return; }
     }
@@ -220,15 +226,11 @@ const App: React.FC = () => {
       content: text, timestamp: Date.now(), isUser: true, attachments
     };
 
-    // Optimistic UI Update
     setMessages(prev => [...prev, userMsg]);
-
-    // Persist user message
     await addMessage(user.uid, currentSessionId, userMsg);
     if (isHuddle) setIsHuddle(true); 
 
-    // Mentions: Filter agents if @Name is used
-    // Use current agents state, fallback to INITIAL if empty
+    // Mentions logic
     const currentAgents = agents.length > 0 ? agents : INITIAL_AGENTS;
     let targetAgents = currentAgents.filter(a => selectedAgentIds.includes(a.id));
     
@@ -239,10 +241,8 @@ const App: React.FC = () => {
         if (mentionedAgents.length > 0) targetAgents = mentionedAgents;
     }
     
-    // Safety fallback
     if (targetAgents.length === 0) targetAgents = [currentAgents[0]];
 
-    // Create a temporary history to send to AI, including the just-sent user message
     const currentHistory = [...messages, userMsg];
     abortControllerRef.current = new AbortController();
 
@@ -350,10 +350,7 @@ const App: React.FC = () => {
         selectedAgents={selectedAgentIds} chatMode={chatMode} viewMode={viewMode}
         sessions={sessions} currentSessionId={currentSessionId || ''} isMobileOpen={isMobileMenuOpen}
         onCloseMobile={() => setIsMobileMenuOpen(false)}
-        onSelectAgent={(id) => {
-             if (chatMode === ChatMode.INDIVIDUAL) setSelectedAgentIds([id]);
-             else setSelectedAgentIds(prev => prev.includes(id) ? (prev.length > 1 ? prev.filter(x=>x!==id) : prev) : [...prev, id]);
-        }}
+        onSelectAgent={handleAgentSelect}
         onSetMode={setChatMode} onSetViewMode={setViewMode}
         onSelectSession={(id) => { setCurrentSessionId(id); setIsMobileMenuOpen(false); }}
         onCreateSession={handleCreateSession}
@@ -412,10 +409,11 @@ const App: React.FC = () => {
         agents={agents.length ? agents : INITIAL_AGENTS} 
       />
       <FocusGroupModal 
-        isOpen={isFocusGroupModalOpen}
-        onClose={() => setIsFocusGroupModalOpen(false)}
+        isOpen={isSessionModalOpen}
+        onClose={() => setIsSessionModalOpen(false)}
+        mode={sessionModalMode}
         agents={agents.length ? agents : INITIAL_AGENTS}
-        onCreate={handleCreateFocusGroup}
+        onCreate={handleSessionModalCreate}
       />
     </div>
   );
