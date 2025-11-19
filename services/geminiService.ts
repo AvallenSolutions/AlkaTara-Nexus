@@ -329,7 +329,7 @@ function decode(base64: string) {
 // Raw PCM to AudioBuffer
 async function decodeAudioData(
     data: Uint8Array,
-    ctx: BaseAudioContext, // Accept BaseAudioContext to support OfflineAudioContext
+    ctx: BaseAudioContext, // Uses the persistent context
     sampleRate: number = 24000,
     numChannels: number = 1,
   ): Promise<AudioBuffer> {
@@ -354,7 +354,11 @@ const VALID_VOICES = [
     "umbriel", "vindemiatrix", "zephyr", "zubenelgenubi"
 ];
 
-export const generateSpeech = async (text: string, voiceName: string = 'Kore'): Promise<AudioBuffer | null> => {
+export const generateSpeech = async (
+    text: string, 
+    voiceName: string = 'Kore',
+    context: BaseAudioContext
+): Promise<AudioBuffer | null> => {
     try {
         const apiKey = getApiKey();
         if (!apiKey) throw new Error("API Key missing");
@@ -387,14 +391,11 @@ export const generateSpeech = async (text: string, voiceName: string = 'Kore'): 
         const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
         if (!base64Audio) throw new Error("No audio data received from API");
 
-        // CRITICAL FIX: Use OfflineAudioContext for decoding to prevent "Max AudioContexts reached" error.
-        // Standard AudioContext is limited by browsers (usually max 6 instances).
-        const OfflineContext = window.OfflineAudioContext || (window as any).webkitOfflineAudioContext;
-        const decodingCtx = new OfflineContext(1, 1, 24000);
-
+        // OPTIMIZATION: Decode using the existing (persistent) AudioContext passed from ChatArea.
+        // This avoids creating a new OfflineAudioContext for every request, which is slow.
         const audioBuffer = await decodeAudioData(
             decode(base64Audio),
-            decodingCtx,
+            context, 
             24000,
             1
         );

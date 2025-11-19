@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth, logOut, enableDemoMode } from './services/firebase';
 import Auth from './components/Auth';
@@ -18,7 +19,7 @@ import {
   initializeUserData, listenToAgents, listenToKnowledgeBase, 
   listenToMessages, addMessage, updateMessage, addKnowledgeItem, saveAgent, deleteAgent,
   listenToTasks, updateTask, deleteTask, listenToFolders,
-  listenToUserSessions, createNewSession, deleteSession,
+  listenToUserSessions, createNewSession, deleteSession, updateSession,
   listenToDirectives, saveDirective, deleteDirective
 } from './services/firestoreService';
 
@@ -206,6 +207,23 @@ const App: React.FC = () => {
 
   const handleSessionModalCreate = (name: string, participantIds: string[]) => {
       executeCreateSession(sessionModalMode, participantIds, name);
+  };
+  
+  const handleRenameSession = async (sessionId: string, newTitle: string) => {
+      if (user && newTitle.trim()) {
+          await updateSession(user.uid, sessionId, { title: newTitle.trim() });
+      }
+  };
+  
+  const handleDeleteSession = async (sessionId: string) => {
+      if (user) {
+          await deleteSession(user.uid, sessionId);
+          if (currentSessionId === sessionId) {
+              // If we deleted the active session, switch to another one if available or null
+              const remaining = sessions.filter(s => s.id !== sessionId);
+              setCurrentSessionId(remaining.length > 0 ? remaining[0].id : null);
+          }
+      }
   };
 
   // Logic when clicking an agent in the sidebar
@@ -477,6 +495,8 @@ const App: React.FC = () => {
         onSetMode={setChatMode} onSetViewMode={setViewMode}
         onSelectSession={(id) => { setCurrentSessionId(id); setIsMobileMenuOpen(false); }}
         onCreateSession={handleCreateSession}
+        onRenameSession={handleRenameSession}
+        onDeleteSession={handleDeleteSession}
         onToggleKnowledgeBase={() => setIsKBOpen(true)} onOpenHowToUse={() => setIsHowToUseOpen(true)}
         onOpenDirectives={() => setIsDirectivesOpen(true)}
         onOpenAnalytics={() => setIsAnalyticsOpen(true)}

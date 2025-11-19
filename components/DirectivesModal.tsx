@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { Directive } from '../types';
 
@@ -31,58 +30,60 @@ const DirectivesModal: React.FC<DirectivesModalProps> = ({ isOpen, onClose, dire
   };
 
   return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-white dark:bg-avallen-800 border border-gray-200 dark:border-avallen-600 rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl flex flex-col transition-colors duration-300">
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-white dark:bg-neutral-900 border-3 border-black w-full max-w-2xl max-h-[90vh] overflow-hidden shadow-neo-xl flex flex-col">
          
-         <div className="p-6 border-b border-gray-200 dark:border-avallen-700 flex justify-between items-center sticky top-0 bg-white dark:bg-avallen-800 z-10">
-            <h2 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
-               <i className="fa-solid fa-clipboard-list text-avallen-accent"></i>
+         <div className="p-6 border-b-3 border-black flex justify-between items-center bg-neo-paper dark:bg-neutral-800">
+            <h2 className="text-xl font-black text-black dark:text-white flex items-center gap-3 uppercase tracking-tighter">
+               <div className="w-10 h-10 bg-green-500 border-2 border-black flex items-center justify-center shadow-neo-sm">
+                 <i className="fa-solid fa-gavel text-white"></i>
+               </div>
                Agent Directives
             </h2>
-            <button onClick={onClose} className="text-gray-400 dark:text-slate-400 hover:text-gray-600 dark:hover:text-white transition-colors">
-               <i className="fa-solid fa-times text-xl"></i>
+            <button onClick={onClose} className="w-8 h-8 bg-white border-2 border-black hover:bg-red-500 hover:text-white shadow-neo-sm flex items-center justify-center text-black">
+               <i className="fa-solid fa-times text-lg"></i>
             </button>
          </div>
 
-         <div className="p-6 space-y-6 flex-1 overflow-y-auto">
-            <div className="bg-blue-50 dark:bg-avallen-900/50 border border-blue-100 dark:border-avallen-700 p-4 rounded-lg text-sm text-gray-700 dark:text-slate-300">
-                <i className="fa-solid fa-circle-info text-avallen-accent mr-2"></i>
-                Directives are global rules that <strong>all agents must follow</strong>. They override individual personas. Use them to enforce specific company policies, tone of voice, or prohibited topics.
+         <div className="p-6 space-y-6 flex-1 overflow-y-auto bg-pattern">
+            <div className="bg-blue-100 border-2 border-black p-4 shadow-neo text-sm font-bold text-black">
+                <i className="fa-solid fa-circle-info mr-2 text-blue-600"></i>
+                Directives are global "LAWS" that all agents must follow. They override individual personas.
             </div>
 
             <div>
-                <label className="block text-xs font-bold text-gray-500 dark:text-slate-400 uppercase mb-2">Add New Directive</label>
+                <label className="block text-xs font-black text-black dark:text-white uppercase mb-2 bg-yellow-300 inline-block px-1 border border-black">Add New Directive</label>
                 <div className="flex gap-2">
                     <input 
                         type="text" 
                         value={newDirective} 
                         onChange={(e) => setNewDirective(e.target.value)}
                         onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
-                        placeholder="e.g. Always mention the user's name in the first sentence..." 
-                        className="flex-1 bg-gray-50 dark:bg-avallen-900 border border-gray-300 dark:border-avallen-600 rounded-lg p-3 text-gray-900 dark:text-white outline-none focus:border-avallen-accent focus:ring-1 focus:ring-avallen-accent"
+                        placeholder="e.g. Always verify sources..." 
+                        className="flex-1 bg-white dark:bg-neutral-800 border-2 border-black p-3 text-sm font-medium outline-none focus:shadow-neo transition-shadow"
                     />
-                    <button onClick={handleAdd} className="bg-avallen-accent hover:bg-sky-400 text-white px-4 py-2 rounded-lg font-bold transition-colors">
-                        <i className="fa-solid fa-plus"></i> Add
+                    <button onClick={handleAdd} className="bg-black text-white px-6 py-2 font-black border-2 border-black shadow-neo hover:bg-gray-800 active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all uppercase">
+                        Add
                     </button>
                 </div>
             </div>
 
             <div>
-                <label className="block text-xs font-bold text-gray-500 dark:text-slate-400 uppercase mb-2">Active Directives</label>
+                <label className="block text-xs font-black text-black dark:text-white uppercase mb-2 bg-white inline-block px-1 border border-black">Active Directives</label>
                 {directives.length === 0 && (
-                    <p className="text-gray-400 dark:text-slate-600 text-sm italic text-center py-4">No directives defined yet.</p>
+                    <div className="text-gray-500 text-sm font-bold text-center py-4 border-2 border-dashed border-black bg-white/50">NO LAWS DEFINED.</div>
                 )}
                 <div className="space-y-3">
                     {directives.map(d => (
-                        <div key={d.id} className={`flex items-start gap-3 p-3 rounded-lg border transition-colors ${d.active ? 'bg-white dark:bg-avallen-900 border-gray-200 dark:border-avallen-700' : 'bg-gray-100 dark:bg-avallen-900/30 border-transparent opacity-60'}`}>
-                            <button onClick={() => handleToggle(d)} className={`mt-1 w-5 h-5 rounded flex items-center justify-center border ${d.active ? 'bg-green-500 border-green-500 text-white' : 'border-gray-400 dark:border-slate-600 text-transparent'}`}>
-                                <i className="fa-solid fa-check text-xs"></i>
+                        <div key={d.id} className={`flex items-start gap-3 p-3 border-2 border-black transition-all ${d.active ? 'bg-white shadow-neo-sm' : 'bg-gray-200 opacity-60'}`}>
+                            <button onClick={() => handleToggle(d)} className={`mt-1 w-6 h-6 flex items-center justify-center border-2 border-black transition-colors ${d.active ? 'bg-green-500 text-white' : 'bg-white'}`}>
+                                {d.active && <i className="fa-solid fa-check text-xs"></i>}
                             </button>
                             <div className="flex-1">
-                                <p className={`text-sm ${d.active ? 'text-gray-800 dark:text-slate-200' : 'text-gray-500 dark:text-slate-500 line-through'}`}>{d.content}</p>
+                                <p className={`text-sm font-bold ${d.active ? 'text-black' : 'text-gray-500 line-through'}`}>{d.content}</p>
                             </div>
-                            <button onClick={() => onDeleteDirective(d.id)} className="text-gray-400 dark:text-slate-500 hover:text-red-500 transition-colors">
-                                <i className="fa-solid fa-trash"></i>
+                            <button onClick={() => onDeleteDirective(d.id)} className="w-6 h-6 bg-red-500 border-2 border-black flex items-center justify-center text-white hover:bg-red-600 shadow-sm">
+                                <i className="fa-solid fa-trash text-xs"></i>
                             </button>
                         </div>
                     ))}

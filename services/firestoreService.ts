@@ -302,6 +302,21 @@ export const createNewSession = async (userId: string, session: ChatSession) => 
     await safeWrite(() => setDoc(ref, removeUndefined(session)));
 };
 
+export const updateSession = async (userId: string, sessionId: string, data: Partial<ChatSession>) => {
+    if (isMock) {
+        const sessions = getMockData(`avallen_${userId}_sessions`);
+        const index = sessions.findIndex((s: ChatSession) => s.id === sessionId);
+        if (index >= 0) {
+            sessions[index] = { ...sessions[index], ...data };
+            setMockData(`avallen_${userId}_sessions`, sessions);
+            window.dispatchEvent(new Event('mock-session-change'));
+        }
+        return;
+    }
+    const ref = doc(collection(db, 'users', userId, 'sessions'), sessionId);
+    await safeWrite(() => setDoc(ref, removeUndefined(data), { merge: true }));
+};
+
 export const deleteSession = async (userId: string, sessionId: string) => {
     if (isMock) {
         let sessions = getMockData(`avallen_${userId}_sessions`);

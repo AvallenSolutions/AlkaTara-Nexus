@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { KnowledgeItem, Folder } from '../types';
 import { addKnowledgeItem, updateKnowledgeItem, deleteKnowledgeItem, createFolder, deleteFolder } from '../services/firestoreService';
@@ -31,6 +30,10 @@ const KnowledgeBasePanel: React.FC<KnowledgeBasePanelProps> = ({ isOpen, onClose
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
 
+  // Delete States (replace window.confirm)
+  const [deletingFolderId, setDeletingFolderId] = useState<string | null>(null);
+  const [deletingItemId, setDeletingItemId] = useState<string | null>(null);
+
   // Form Data
   const [formData, setFormData] = useState<{
       id?: string;
@@ -51,6 +54,8 @@ const KnowledgeBasePanel: React.FC<KnowledgeBasePanelProps> = ({ isOpen, onClose
           setSearchQuery('');
           setViewMode('GRID');
           setIsCreatingFolder(false);
+          setDeletingFolderId(null);
+          setDeletingItemId(null);
       }
   }, [isOpen]);
 
@@ -78,12 +83,11 @@ const KnowledgeBasePanel: React.FC<KnowledgeBasePanelProps> = ({ isOpen, onClose
       setNewFolderName('');
   };
 
-  const handleDeleteFolder = async (id: string) => {
+  const handleConfirmDeleteFolder = async (id: string) => {
       if (!user) return;
-      if (confirm("Delete this folder? Files inside will remain but become unorganized.")) {
-          await deleteFolder(user.uid, id);
-          if (currentFolderId === id) setCurrentFolderId(null);
-      }
+      await deleteFolder(user.uid, id);
+      if (currentFolderId === id) setCurrentFolderId(null);
+      setDeletingFolderId(null);
   };
 
   const handleStartUpload = (type: UploadType) => {
@@ -169,10 +173,11 @@ const KnowledgeBasePanel: React.FC<KnowledgeBasePanelProps> = ({ isOpen, onClose
       }
   };
 
-  const handleDeleteItem = async (id: string) => {
-      if (user && confirm("Delete this item?")) {
+  const handleConfirmDeleteItem = async (id: string) => {
+      if (user) {
           await deleteKnowledgeItem(user.uid, id);
       }
+      setDeletingItemId(null);
   };
   
   const handleEditItem = (item: KnowledgeItem) => {
@@ -193,10 +198,10 @@ const KnowledgeBasePanel: React.FC<KnowledgeBasePanelProps> = ({ isOpen, onClose
   // Icons based on file type
   const getFileIcon = (mime?: string) => {
       if (!mime) return 'fa-file';
-      if (mime.includes('pdf')) return 'fa-file-pdf text-red-400';
-      if (mime.includes('image')) return 'fa-file-image text-purple-400';
-      if (mime.includes('sheet') || mime.includes('csv')) return 'fa-file-excel text-green-400';
-      return 'fa-file-alt text-gray-400';
+      if (mime.includes('pdf')) return 'fa-file-pdf text-red-600';
+      if (mime.includes('image')) return 'fa-file-image text-purple-600';
+      if (mime.includes('sheet') || mime.includes('csv')) return 'fa-file-excel text-green-600';
+      return 'fa-file-alt text-gray-600';
   };
 
   const downloadFile = (item: KnowledgeItem) => {
@@ -209,39 +214,38 @@ const KnowledgeBasePanel: React.FC<KnowledgeBasePanelProps> = ({ isOpen, onClose
   };
 
   return (
-    <div className={`fixed inset-0 md:left-auto md:w-[800px] bg-gray-50 dark:bg-avallen-900 shadow-2xl transform transition-transform duration-300 z-30 border-l border-gray-200 dark:border-avallen-700 flex flex-col ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}>
+    <div className={`fixed inset-0 md:left-auto md:w-[800px] bg-white dark:bg-neutral-900 border-l-3 border-black shadow-neo-xl transform transition-transform duration-300 z-30 flex flex-col ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}>
       
       {/* Header */}
-      <div className="h-16 border-b border-gray-200 dark:border-avallen-700 flex items-center justify-between px-6 bg-white dark:bg-avallen-800 transition-colors duration-300">
-         <h2 className="font-bold text-gray-900 dark:text-white flex items-center gap-2 text-lg">
-            <i className="fa-solid fa-database text-yellow-500"></i> Knowledge Base
+      <div className="h-16 border-b-3 border-black flex items-center justify-between px-6 bg-neo-paper dark:bg-neutral-800">
+         <h2 className="font-black text-black dark:text-white flex items-center gap-2 text-lg uppercase tracking-tight">
+            <i className="fa-solid fa-database text-black"></i> Knowledge Base
          </h2>
-         <button onClick={onClose} className="text-gray-400 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white">
+         <button onClick={onClose} className="w-8 h-8 bg-white border-2 border-black text-black hover:bg-red-500 hover:text-white transition-colors shadow-neo-sm flex items-center justify-center">
             <i className="fa-solid fa-times text-lg"></i>
          </button>
       </div>
 
       <div className="flex flex-1 overflow-hidden">
           {/* SIDEBAR: FOLDERS */}
-          <div className="w-64 bg-gray-100 dark:bg-avallen-900 border-r border-gray-200 dark:border-avallen-700 flex flex-col transition-colors duration-300">
-              <div className="p-4 border-b border-gray-200 dark:border-avallen-700 flex justify-between items-center">
-                  <span className="text-xs font-bold text-gray-500 dark:text-slate-400 uppercase">Folders</span>
-                  <button onClick={() => setIsCreatingFolder(true)} className="text-avallen-accent hover:text-sky-600 dark:hover:text-white">
-                      <i className="fa-solid fa-plus"></i>
+          <div className="w-64 bg-gray-50 dark:bg-neutral-900 border-r-3 border-black flex flex-col">
+              <div className="p-4 border-b-3 border-black flex justify-between items-center bg-white dark:bg-neutral-800">
+                  <span className="text-xs font-black text-black dark:text-white uppercase bg-yellow-300 px-1 border border-black">Folders</span>
+                  <button onClick={() => setIsCreatingFolder(true)} className="w-6 h-6 bg-neo-primary text-white border-2 border-black flex items-center justify-center hover:shadow-neo-sm active:translate-y-[1px] transition-all">
+                      <i className="fa-solid fa-plus text-xs"></i>
                   </button>
               </div>
-              <div className="flex-1 overflow-y-auto p-2 space-y-1">
+              <div className="flex-1 overflow-y-auto p-2 space-y-2">
                   <button 
                     onClick={() => setCurrentFolderId(null)}
-                    className={`w-full text-left px-3 py-2 rounded flex items-center gap-2 text-sm ${!currentFolderId ? 'bg-white dark:bg-avallen-800 text-gray-900 dark:text-white shadow-sm' : 'text-gray-500 dark:text-slate-400 hover:bg-gray-200 dark:hover:bg-avallen-800/50'}`}
+                    className={`w-full text-left px-3 py-2 flex items-center gap-2 text-sm font-bold border-2 transition-all ${!currentFolderId ? 'bg-black text-white border-black shadow-neo-sm' : 'bg-white text-black border-black hover:bg-gray-100'}`}
                   >
                       <i className="fa-solid fa-folder-open text-yellow-500"></i> All Files
                   </button>
 
                   {/* Inline Folder Creation */}
                   {isCreatingFolder && (
-                      <div className="px-3 py-2 bg-gray-200 dark:bg-avallen-800/50 rounded flex items-center gap-2 animate-fade-in">
-                           <i className="fa-solid fa-folder text-gray-500"></i>
+                      <div className="px-2 py-2 bg-white border-2 border-black shadow-neo-sm flex items-center gap-2">
                            <input 
                               id="new-folder-input"
                               type="text" 
@@ -251,12 +255,12 @@ const KnowledgeBasePanel: React.FC<KnowledgeBasePanelProps> = ({ isOpen, onClose
                                   if (e.key === 'Enter') handleCreateFolder();
                                   if (e.key === 'Escape') setIsCreatingFolder(false);
                               }}
-                              className="bg-transparent border-b border-avallen-accent text-gray-900 dark:text-white text-sm w-28 outline-none"
-                              placeholder="Name..."
+                              className="bg-gray-100 border-b-2 border-black text-black text-xs w-24 outline-none font-bold"
+                              placeholder="NAME..."
                               autoFocus
                            />
-                           <button onClick={handleCreateFolder} className="text-green-600 dark:text-green-400 hover:text-green-500 text-xs"><i className="fa-solid fa-check"></i></button>
-                           <button onClick={() => setIsCreatingFolder(false)} className="text-red-600 dark:text-red-400 hover:text-red-500 text-xs"><i className="fa-solid fa-times"></i></button>
+                           <button onClick={handleCreateFolder} className="text-green-600 hover:bg-green-100 px-1"><i className="fa-solid fa-check"></i></button>
+                           <button onClick={() => setIsCreatingFolder(false)} className="text-red-600 hover:bg-red-100 px-1"><i className="fa-solid fa-times"></i></button>
                       </div>
                   )}
 
@@ -264,110 +268,133 @@ const KnowledgeBasePanel: React.FC<KnowledgeBasePanelProps> = ({ isOpen, onClose
                       <div key={folder.id} className="group relative">
                           <button 
                             onClick={() => setCurrentFolderId(folder.id)}
-                            className={`w-full text-left px-3 py-2 rounded flex items-center gap-2 text-sm ${currentFolderId === folder.id ? 'bg-white dark:bg-avallen-800 text-gray-900 dark:text-white shadow-sm' : 'text-gray-500 dark:text-slate-400 hover:bg-gray-200 dark:hover:bg-avallen-800/50'}`}
+                            className={`w-full text-left px-3 py-2 flex items-center gap-2 text-sm font-bold border-2 transition-all ${currentFolderId === folder.id ? 'bg-black text-white border-black shadow-neo-sm' : 'bg-white text-black border-black hover:bg-gray-100'}`}
                           >
-                              <i className="fa-solid fa-folder text-gray-500 dark:text-slate-500"></i> 
+                              <i className="fa-solid fa-folder text-yellow-500"></i> 
                               <span className="truncate">{folder.name}</span>
                           </button>
-                          <button 
-                            onClick={() => handleDeleteFolder(folder.id)}
-                            className="absolute right-2 top-2 text-gray-400 hover:text-red-500 hidden group-hover:block"
-                          >
-                              <i className="fa-solid fa-times text-xs"></i>
-                          </button>
+                          
+                          {/* Delete Folder Logic */}
+                          {deletingFolderId === folder.id ? (
+                              <div className="absolute right-0 top-0 bottom-0 flex items-center gap-1 bg-red-500 px-1 border-2 border-black z-10">
+                                  <button onClick={() => handleConfirmDeleteFolder(folder.id)} className="text-white font-black text-[10px] hover:underline">YES</button>
+                                  <button onClick={() => setDeletingFolderId(null)} className="text-white font-black text-[10px] hover:underline">NO</button>
+                              </div>
+                          ) : (
+                              <button 
+                                onClick={() => setDeletingFolderId(folder.id)}
+                                className="absolute right-2 top-1/2 -translate-y-1/2 text-black hover:text-red-600 hidden group-hover:block z-10 bg-white border border-black w-5 h-5 flex items-center justify-center"
+                              >
+                                  <i className="fa-solid fa-times text-xs"></i>
+                              </button>
+                          )}
                       </div>
                   ))}
               </div>
           </div>
 
           {/* MAIN: CONTENT */}
-          <div className="flex-1 flex flex-col bg-gray-50 dark:bg-avallen-800/30 transition-colors duration-300">
+          <div className="flex-1 flex flex-col bg-neo-bg dark:bg-neutral-900 transition-colors duration-300 bg-pattern">
               
               {viewMode === 'GRID' && (
                   <>
                     {/* Actions Toolbar */}
-                    <div className="p-4 border-b border-gray-200 dark:border-avallen-700 flex gap-4 items-center bg-white dark:bg-transparent">
+                    <div className="p-4 border-b-3 border-black flex gap-4 items-center bg-white dark:bg-neutral-800">
                         <div className="flex-1 relative">
-                             <i className="fa-solid fa-search absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 text-xs"></i>
+                             <i className="fa-solid fa-search absolute left-3 top-1/2 transform -translate-y-1/2 text-black text-xs"></i>
                              <input 
                                 type="text" 
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
-                                className="w-full bg-gray-100 dark:bg-avallen-900 border border-gray-300 dark:border-avallen-600 rounded pl-8 pr-4 py-1.5 text-sm text-gray-900 dark:text-white outline-none focus:border-avallen-accent"
-                                placeholder="Search current folder..."
+                                className="w-full bg-white dark:bg-neutral-900 border-2 border-black pl-8 pr-4 py-2 text-sm font-bold text-black dark:text-white outline-none focus:shadow-neo transition-shadow placeholder-gray-500"
+                                placeholder="SEARCH..."
                              />
                         </div>
                         <div className="flex gap-2">
                             <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileSelect} accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.md,image/*" />
-                            <button onClick={() => handleStartUpload('FILE')} className="flex items-center gap-2 px-3 py-1.5 bg-gray-200 dark:bg-avallen-700 hover:bg-gray-300 dark:hover:bg-avallen-600 text-gray-800 dark:text-white text-xs rounded border border-gray-300 dark:border-avallen-600 transition-colors">
-                                <i className="fa-solid fa-cloud-upload-alt"></i> Upload
-                            </button>
-                            <button onClick={() => handleStartUpload('LINK')} className="flex items-center gap-2 px-3 py-1.5 bg-gray-200 dark:bg-avallen-700 hover:bg-gray-300 dark:hover:bg-avallen-600 text-gray-800 dark:text-white text-xs rounded border border-gray-300 dark:border-avallen-600 transition-colors">
-                                <i className="fa-solid fa-link"></i> Link
-                            </button>
-                            <button onClick={() => handleStartUpload('NOTE')} className="flex items-center gap-2 px-3 py-1.5 bg-gray-200 dark:bg-avallen-700 hover:bg-gray-300 dark:hover:bg-avallen-600 text-gray-800 dark:text-white text-xs rounded border border-gray-300 dark:border-avallen-600 transition-colors">
-                                <i className="fa-solid fa-sticky-note"></i> Note
-                            </button>
+                            {[
+                                { type: 'FILE', icon: 'fa-cloud-upload-alt', label: 'Upload' },
+                                { type: 'LINK', icon: 'fa-link', label: 'Link' },
+                                { type: 'NOTE', icon: 'fa-sticky-note', label: 'Note' }
+                            ].map(btn => (
+                                <button 
+                                    key={btn.type}
+                                    onClick={() => handleStartUpload(btn.type as UploadType)} 
+                                    className="flex items-center gap-2 px-3 py-2 bg-white text-black text-xs font-black border-2 border-black shadow-neo-sm hover:translate-x-[1px] hover:translate-y-[1px] hover:shadow-none transition-all uppercase"
+                                >
+                                    <i className={`fa-solid ${btn.icon}`}></i> <span className="hidden md:inline">{btn.label}</span>
+                                </button>
+                            ))}
                         </div>
                     </div>
                     
                     {/* Breadcrumbs */}
-                    <div className="px-4 py-2 text-xs text-gray-500 dark:text-slate-500 flex items-center gap-2">
-                        <span>Knowledge Base</span>
-                        <i className="fa-solid fa-chevron-right text-[10px]"></i>
-                        <span className="text-gray-900 dark:text-white font-bold">{currentFolder?.name || 'All Files'}</span>
+                    <div className="px-4 py-2 text-xs flex items-center gap-2 border-b-2 border-black bg-yellow-100 dark:bg-neutral-700">
+                        <span className="font-bold uppercase">KB</span>
+                        <i className="fa-solid fa-caret-right text-[10px]"></i>
+                        <span className="font-black uppercase">{currentFolder?.name || 'All Files'}</span>
                     </div>
 
                     {/* Grid */}
-                    <div className="p-4 overflow-y-auto grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 content-start flex-1">
+                    <div className="p-4 overflow-y-auto grid grid-cols-1 sm:grid-cols-2 gap-4 content-start flex-1">
                         {isLoading && (
-                             <div className="col-span-full flex flex-col items-center justify-center py-20 text-gray-500">
-                                 <i className="fa-solid fa-circle-notch fa-spin text-3xl mb-3 text-avallen-accent"></i>
-                                 <p>Processing...</p>
+                             <div className="col-span-full flex flex-col items-center justify-center py-20">
+                                 <div className="w-12 h-12 border-4 border-black border-t-transparent rounded-full animate-spin mb-4"></div>
+                                 <p className="font-black uppercase">Processing...</p>
                              </div>
                         )}
                         {!isLoading && filteredItems.length === 0 && (
-                            <div className="col-span-full text-center py-20 text-gray-400 border-2 border-dashed border-gray-300 dark:border-avallen-700 rounded-xl">
+                            <div className="col-span-full text-center py-20 text-gray-500 border-2 border-dashed border-black bg-white/50">
                                 <i className="fa-solid fa-box-open text-4xl mb-2 opacity-50"></i>
-                                <p>This folder is empty.</p>
+                                <p className="font-bold uppercase">Folder Empty</p>
                             </div>
                         )}
                         
                         {filteredItems.map(item => (
-                            <div key={item.id} className="bg-white dark:bg-avallen-900 border border-gray-200 dark:border-avallen-700 hover:border-avallen-accent rounded-lg p-3 flex flex-col group transition-all relative h-32 shadow-sm">
+                            <div key={item.id} className="bg-white dark:bg-neutral-800 border-2 border-black shadow-neo p-3 flex flex-col group relative h-36 hover:-translate-y-1 transition-transform">
                                 {/* Type Icon */}
                                 <div className="flex justify-between items-start mb-2">
-                                    <div className="w-8 h-8 rounded bg-gray-100 dark:bg-avallen-800 flex items-center justify-center">
+                                    <div className="w-8 h-8 border-2 border-black bg-gray-100 flex items-center justify-center shadow-sm">
                                         {item.type === 'FILE' && <i className={`fa-solid ${getFileIcon(item.fileMimeType)} text-lg`}></i>}
-                                        {item.type === 'LINK' && <i className="fa-solid fa-link text-blue-500 dark:text-blue-400 text-lg"></i>}
+                                        {item.type === 'LINK' && <i className="fa-solid fa-link text-blue-500 text-lg"></i>}
                                         {item.type === 'NOTE' && <i className="fa-solid fa-sticky-note text-yellow-500 text-lg"></i>}
                                     </div>
-                                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-white dark:bg-avallen-900/80 rounded shadow-sm">
-                                        {item.type === 'FILE' && (
-                                            <button onClick={() => downloadFile(item)} className="p-1 text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white" title="Download">
-                                                <i className="fa-solid fa-download"></i>
-                                            </button>
+                                    
+                                    <div className="flex gap-1">
+                                        {deletingItemId === item.id ? (
+                                            <div className="flex items-center gap-1 px-1 bg-red-500 border-2 border-black">
+                                                <button onClick={() => handleConfirmDeleteItem(item.id)} className="text-[10px] font-black text-white hover:underline">DEL</button>
+                                                <button onClick={() => setDeletingItemId(null)} className="text-[10px] font-black text-white hover:underline">X</button>
+                                            </div>
+                                        ) : (
+                                            <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                {item.type === 'FILE' && (
+                                                    <button onClick={() => downloadFile(item)} className="w-6 h-6 border-2 border-black bg-white hover:bg-gray-200 flex items-center justify-center text-black text-xs" title="Download">
+                                                        <i className="fa-solid fa-download"></i>
+                                                    </button>
+                                                )}
+                                                {item.type === 'LINK' && item.url && (
+                                                     <a href={item.url} target="_blank" rel="noopener noreferrer" className="w-6 h-6 border-2 border-black bg-white hover:bg-gray-200 flex items-center justify-center text-black text-xs" title="Open">
+                                                        <i className="fa-solid fa-arrow-up-right-from-square"></i>
+                                                     </a>
+                                                )}
+                                                <button onClick={() => handleEditItem(item)} className="w-6 h-6 border-2 border-black bg-yellow-300 hover:bg-yellow-400 flex items-center justify-center text-black text-xs">
+                                                    <i className="fa-solid fa-pen"></i>
+                                                </button>
+                                                <button onClick={() => setDeletingItemId(item.id)} className="w-6 h-6 border-2 border-black bg-red-400 hover:bg-red-500 flex items-center justify-center text-black text-xs">
+                                                    <i className="fa-solid fa-trash"></i>
+                                                </button>
+                                            </div>
                                         )}
-                                        {item.type === 'LINK' && item.url && (
-                                             <a href={item.url} target="_blank" rel="noopener noreferrer" className="p-1 text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white" title="Open Link">
-                                                <i className="fa-solid fa-external-link-alt"></i>
-                                             </a>
-                                        )}
-                                        <button onClick={() => handleEditItem(item)} className="p-1 text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white">
-                                            <i className="fa-solid fa-pen"></i>
-                                        </button>
-                                        <button onClick={() => handleDeleteItem(item.id)} className="p-1 text-gray-500 dark:text-slate-400 hover:text-red-500">
-                                            <i className="fa-solid fa-trash"></i>
-                                        </button>
                                     </div>
                                 </div>
                                 
-                                <h4 className="text-sm font-bold text-gray-900 dark:text-white truncate mb-1" title={item.title}>{item.title}</h4>
-                                <p className="text-[10px] text-gray-500 dark:text-slate-400 line-clamp-2">{item.content}</p>
+                                <h4 className="text-sm font-black text-black dark:text-white truncate mb-1 uppercase leading-tight" title={item.title}>{item.title}</h4>
+                                <p className="text-[10px] font-medium text-gray-600 dark:text-gray-400 line-clamp-2 font-mono bg-gray-100 dark:bg-neutral-900 p-1 border border-gray-300 dark:border-gray-700">{item.content}</p>
                                 
-                                <div className="mt-auto pt-2 flex justify-between items-center">
-                                    <span className="text-[9px] px-1.5 rounded bg-gray-100 dark:bg-avallen-800 text-gray-500 dark:text-slate-400 border border-gray-200 dark:border-avallen-700">{item.category}</span>
-                                    <span className="text-[9px] text-gray-400 dark:text-slate-600">{new Date(item.timestamp).toLocaleDateString()}</span>
+                                <div className="mt-auto pt-2 flex justify-between items-center border-t-2 border-black border-dashed">
+                                    <span className="text-[9px] px-1 font-bold bg-black text-white uppercase">{item.category}</span>
+                                    <span className="text-[9px] font-bold text-gray-500">{new Date(item.timestamp).toLocaleDateString()}</span>
                                 </div>
                             </div>
                         ))}
@@ -377,38 +404,38 @@ const KnowledgeBasePanel: React.FC<KnowledgeBasePanelProps> = ({ isOpen, onClose
 
               {/* Form View (Upload/Edit) */}
               {viewMode === 'FORM' && (
-                  <div className="p-6 flex-1 flex flex-col overflow-y-auto">
-                      <div className="flex justify-between items-center mb-6">
-                          <h3 className="text-lg font-bold text-gray-900 dark:text-white">
-                              {formData.id ? 'Edit Item' : `New ${uploadType === 'FILE' ? 'File Upload' : uploadType === 'LINK' ? 'Link' : 'Note'}`}
+                  <div className="p-6 flex-1 flex flex-col overflow-y-auto bg-white dark:bg-neutral-800">
+                      <div className="flex justify-between items-center mb-6 border-b-2 border-black pb-2">
+                          <h3 className="text-lg font-black text-black dark:text-white uppercase">
+                              {formData.id ? 'Edit Item' : `New ${uploadType}`}
                           </h3>
-                          <button onClick={() => setViewMode('GRID')} className="text-sm text-gray-500 hover:text-gray-900 dark:text-slate-400 dark:hover:text-white">Cancel</button>
+                          <button onClick={() => setViewMode('GRID')} className="text-xs font-bold underline text-red-500 hover:text-red-700 uppercase">Cancel</button>
                       </div>
 
                       <div className="space-y-4 max-w-lg mx-auto w-full">
                           {isLoading ? (
                               <div className="text-center py-10">
-                                  <i className="fa-solid fa-circle-notch fa-spin text-3xl text-avallen-accent mb-4"></i>
-                                  <p className="text-gray-500 dark:text-slate-300">Analyzing content with Gemini...</p>
+                                  <div className="w-12 h-12 border-4 border-black border-t-transparent rounded-full animate-spin mb-4 mx-auto"></div>
+                                  <p className="font-black uppercase animate-pulse">Analyzing...</p>
                               </div>
                           ) : (
                               <>
                                   <div>
-                                      <label className="block text-xs font-bold text-gray-500 dark:text-slate-400 uppercase mb-1">Title</label>
+                                      <label className="block text-xs font-black text-black dark:text-white uppercase mb-1 bg-yellow-300 inline-block px-1 border border-black">Title</label>
                                       <input 
                                         type="text" 
                                         value={formData.title}
                                         onChange={(e) => setFormData({...formData, title: e.target.value})}
-                                        className="w-full bg-white dark:bg-avallen-900 border border-gray-300 dark:border-avallen-600 rounded p-2 text-gray-900 dark:text-white outline-none focus:border-avallen-accent"
+                                        className="w-full bg-white dark:bg-neutral-900 border-2 border-black p-3 text-sm font-bold outline-none focus:shadow-neo transition-shadow"
                                       />
                                   </div>
                                   
                                   <div>
-                                      <label className="block text-xs font-bold text-gray-500 dark:text-slate-400 uppercase mb-1">Category</label>
+                                      <label className="block text-xs font-black text-black dark:text-white uppercase mb-1 bg-yellow-300 inline-block px-1 border border-black">Category</label>
                                       <select 
                                         value={formData.category}
                                         onChange={(e) => setFormData({...formData, category: e.target.value})}
-                                        className="w-full bg-white dark:bg-avallen-900 border border-gray-300 dark:border-avallen-600 rounded p-2 text-gray-900 dark:text-white outline-none focus:border-avallen-accent"
+                                        className="w-full bg-white dark:bg-neutral-900 border-2 border-black p-3 text-sm font-bold outline-none focus:shadow-neo transition-shadow"
                                       >
                                           {['STRATEGY', 'KPI', 'LEGAL', 'PRODUCT', 'OTHER'].map(c => <option key={c} value={c}>{c}</option>)}
                                       </select>
@@ -416,35 +443,35 @@ const KnowledgeBasePanel: React.FC<KnowledgeBasePanelProps> = ({ isOpen, onClose
 
                                   {uploadType === 'LINK' && (
                                       <div>
-                                          <label className="block text-xs font-bold text-gray-500 dark:text-slate-400 uppercase mb-1">URL</label>
+                                          <label className="block text-xs font-black text-black dark:text-white uppercase mb-1 bg-yellow-300 inline-block px-1 border border-black">URL</label>
                                           <input 
                                             type="text" 
                                             value={formData.url || ''}
                                             onChange={(e) => setFormData({...formData, url: e.target.value})}
-                                            className="w-full bg-white dark:bg-avallen-900 border border-gray-300 dark:border-avallen-600 rounded p-2 text-gray-900 dark:text-white outline-none focus:border-avallen-accent"
+                                            className="w-full bg-white dark:bg-neutral-900 border-2 border-black p-3 text-sm font-bold outline-none focus:shadow-neo transition-shadow"
                                             placeholder="https://..."
                                           />
                                           <button 
-                                            onClick={() => setFormData({...formData, content: 'Analyzed content would go here...'})} // Mock auto-fetch
-                                            className="text-xs text-avallen-accent mt-1 hover:underline"
+                                            onClick={() => setFormData({...formData, content: 'Analyzed content would go here...'})} 
+                                            className="text-xs font-bold text-blue-600 hover:underline mt-1 uppercase"
                                           >
-                                              Auto-fetch & Summarize
+                                              [Simulate Fetch]
                                           </button>
                                       </div>
                                   )}
 
                                   <div>
-                                      <label className="block text-xs font-bold text-gray-500 dark:text-slate-400 uppercase mb-1">
+                                      <label className="block text-xs font-black text-black dark:text-white uppercase mb-1 bg-yellow-300 inline-block px-1 border border-black">
                                           {uploadType === 'FILE' ? 'AI Summary' : 'Content'}
                                       </label>
                                       <textarea 
                                         value={formData.content}
                                         onChange={(e) => setFormData({...formData, content: e.target.value})}
-                                        className="w-full bg-white dark:bg-avallen-900 border border-gray-300 dark:border-avallen-600 rounded p-2 text-gray-900 dark:text-white outline-none focus:border-avallen-accent h-32 resize-none"
+                                        className="w-full bg-white dark:bg-neutral-900 border-2 border-black p-3 text-sm font-mono outline-none focus:shadow-neo transition-shadow h-40 resize-none"
                                       />
                                       {uploadType === 'NOTE' && (
-                                          <button onClick={handleAutoFormatNote} className="text-xs text-purple-500 dark:text-purple-400 mt-1 hover:text-purple-700 dark:hover:text-purple-300">
-                                              <i className="fa-solid fa-wand-magic-sparkles"></i> Auto-Format with AI
+                                          <button onClick={handleAutoFormatNote} className="text-xs font-bold bg-neo-primary text-white px-2 py-1 border-2 border-black mt-2 shadow-neo-sm hover:translate-x-[1px] hover:translate-y-[1px] hover:shadow-none transition-all">
+                                              <i className="fa-solid fa-wand-magic-sparkles"></i> AUTO-FORMAT
                                           </button>
                                       )}
                                   </div>
@@ -452,7 +479,7 @@ const KnowledgeBasePanel: React.FC<KnowledgeBasePanelProps> = ({ isOpen, onClose
                                   <button 
                                     onClick={handleSave}
                                     disabled={!formData.title}
-                                    className="w-full bg-avallen-accent text-white font-bold py-2 rounded shadow-lg hover:bg-sky-400 transition-colors disabled:opacity-50"
+                                    className="w-full bg-neo-secondary text-black font-black py-3 border-2 border-black shadow-neo hover:bg-emerald-400 active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50 disabled:cursor-not-allowed uppercase mt-4"
                                   >
                                       Save Item
                                   </button>
