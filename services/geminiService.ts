@@ -1,8 +1,18 @@
 
-import { GoogleGenAI, Content, Part, Tool, Type, GenerateContentResponse } from "@google/genai";
+import { GoogleGenAI, Content, Part, Tool, Type, GenerateContentResponse, Modality } from "@google/genai";
 import { Agent, Message, KnowledgeItem, GroundingMetadata, ChartData, Directive, EmailDraft, CalendarEvent } from "../types";
 
 const MAX_HISTORY_LENGTH = 30;
+
+// Safe Environment Access
+const getApiKey = (): string | undefined => {
+    try {
+        // @ts-ignore
+        return process.env.API_KEY;
+    } catch (e) {
+        return undefined;
+    }
+};
 
 const formatHistory = (messages: Message[]): Content[] => {
   const recentMessages = messages.length > MAX_HISTORY_LENGTH 
@@ -51,7 +61,7 @@ const retryWithBackoff = async <T>(fn: () => Promise<T>, retries = 3, delay = 10
   try {
     return await fn();
   } catch (error: any) {
-    if (retries > 0 && (error.status === 503 || error.status === 429 || error.status === 500 || error.message?.includes('fetch'))) {
+    if (retries > 0 && (error.status === 503 || error.status === 429 || error.status === 500 || error.message?.includes('fetch') || error.message?.includes('Failed to call'))) {
       console.warn(`API Call failed. Retrying... (${retries} attempts left)`);
       await new Promise(resolve => setTimeout(resolve, delay));
       return retryWithBackoff(fn, retries - 1, delay * 2);
@@ -72,92 +82,91 @@ export const generateAgentResponse = async (
   userDirectives: Directive[] = [],
   modelName: string = 'gemini-2.5-flash'
 ): Promise<AgentResponse> => {
-  if (!process.env.API_KEY) return { text: "Error: API Key is missing. Please check your configuration." };
-
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
-  // Prepare Knowledge Base Context
-  const kbContext = knowledgeBase.length > 0 
-    ? knowledgeBase.map(k => `[${k.category}] ${k.title}: ${k.content}`).join('\n')
-    : "No shared knowledge recorded yet.";
-
-  const otherAgents = activeAgents.filter(a => a.id !== currentAgent.id);
-  const colleagueContext = otherAgents.length > 0
-    ? `You are currently in a conversation with the following colleagues. You can reference their expertise if necessary, but do not speak for them:\n${otherAgents.map(a => `- ${a.name} ${a.surname} (${a.role}): ${a.expertise}`).join('\n')}`
-    : "You are speaking with the user individually.";
-
-  const devilsAdvocateInstruction = isDevilsAdvocateMode
-    ? `\n\n⚠️ DEVIL'S ADVOCATE MODE ACTIVE ⚠️\n- You MUST critically challenge the user's assumptions.\n- Look for flaws, risks, legal loopholes, or technical bottlenecks.`
-    : "";
-
-  const deepResearchInstruction = isDeepResearchMode
-    ? `\n\n🔍 DEEP RESEARCH MODE ACTIVE 🔍\n- Reason extensively. Use Google Search to triangulate facts.`
-    : "";
-
-  const canvasContext = currentCanvasContent 
-    ? `\n\n📝 CURRENT CANVAS CONTENT 📝\n\`\`\`\n${currentCanvasContent}\n\`\`\`\nIf the user asks for edits, output the FULL updated document in 'canvas_update'.`
-    : `\n\n📝 CANVAS AVAILABLE 📝\nTo write long-form content (code, articles), use 'canvas_update' JSON.`;
-
-  const groupDynamicsInstruction = activeAgents.length > 1 
-    ? `\nIMPORTANT GROUP DYNAMICS:\n- Do NOT start your response with "As [Name] said...".\n- Provide *new, additive value* based on your role (${currentAgent.role}).`
-    : "";
-
-  // Format User Directives
-  const activeDirectives = userDirectives.filter(d => d.active).map((d, i) => `${i+1}. ${d.content}`).join('\n');
-  const userDirectivesBlock = activeDirectives ? `\n--- USER-DEFINED PROTOCOLS ---\nThe user has defined these additional mandatory rules:\n${activeDirectives}` : "";
-
-  const currentDate = new Date();
-  const timeContext = `CURRENT DATE AND TIME: ${currentDate.toLocaleString('en-US', { dateStyle: 'full', timeStyle: 'short' })}.`;
-
-  const finalSystemInstruction = `
-    ${CORE_DIRECTIVES}
-    ${userDirectivesBlock}
-    ${timeContext}
-    
-    --- AGENT PROFILE ---
-    Name: ${currentAgent.name} ${currentAgent.surname}
-    Role: ${currentAgent.role}
-    
-    --- PERSONAL BACKSTORY ---
-    ${currentAgent.backstory}
-    
-    --- SYSTEM INSTRUCTIONS ---
-    ${currentAgent.systemInstruction}
-
-    --- CONTEXTUAL AWARENESS ---
-    1. COLLEAGUES PRESENT:
-    ${colleagueContext}
-
-    2. SHARED KNOWLEDGE BASE:
-    ${kbContext}
-
-    ${devilsAdvocateInstruction}
-    ${deepResearchInstruction}
-    ${canvasContext}
-    ${groupDynamicsInstruction}
-
-    3. INSTRUCTIONS & OUTPUT FORMATS:
-    - Use Markdown.
-    - **Action: Save to KB**: \`\`\`json { "new_kb_entry": { "title": "...", "category": "...", "content": "..." } } \`\`\`
-    - **Action: Create Task**: \`\`\`json { "new_task": { "title": "...", "description": "...", "priority": "...", "assignee": "...", "dueDate": "..." } } \`\`\`
-    - **Action: Chart**: \`\`\`json { "chart_data": { "title": "...", "type": "BAR|LINE|PIE", "labels": [], "datasets": [] } } \`\`\`
-    - **Action: Update Canvas**: \`\`\`json { "canvas_update": { "title": "...", "content": "..." } } \`\`\`
-    - **Action: Draft Email**: \`\`\`json { "draft_email": { "to": "...", "subject": "...", "body": "..." } } \`\`\`
-    - **Action: Schedule Meeting**: \`\`\`json { "schedule_meeting": { "title": "...", "startTime": "YYYY-MM-DDTHH:MM", "endTime": "YYYY-MM-DDTHH:MM", "description": "...", "location": "..." } } \`\`\`
-    
-    ${contextInstruction || ''}
-  `;
-
   try {
+      const apiKey = getApiKey();
+      if (!apiKey) return { text: "Error: API Key is missing. Please check your configuration (process.env.API_KEY)." };
+
+      const ai = new GoogleGenAI({ apiKey: apiKey });
+
+      // Prepare Knowledge Base Context
+      const kbContext = knowledgeBase.length > 0 
+        ? knowledgeBase.map(k => `[${k.category}] ${k.title}: ${k.content}`).join('\n')
+        : "No shared knowledge recorded yet.";
+
+      const otherAgents = activeAgents.filter(a => a.id !== currentAgent.id);
+      const colleagueContext = otherAgents.length > 0
+        ? `You are currently in a conversation with the following colleagues. You can reference their expertise if necessary, but do not speak for them:\n${otherAgents.map(a => `- ${a.name} ${a.surname} (${a.role}): ${a.expertise}`).join('\n')}`
+        : "You are speaking with the user individually.";
+
+      const devilsAdvocateInstruction = isDevilsAdvocateMode
+        ? `\n\n⚠️ DEVIL'S ADVOCATE MODE ACTIVE ⚠️\n- You MUST critically challenge the user's assumptions.\n- Look for flaws, risks, legal loopholes, or technical bottlenecks.`
+        : "";
+
+      const deepResearchInstruction = isDeepResearchMode
+        ? `\n\n🔍 DEEP RESEARCH MODE ACTIVE 🔍\n- Reason extensively. Use Google Search to triangulate facts.`
+        : "";
+
+      const canvasContext = currentCanvasContent 
+        ? `\n\n📝 CURRENT CANVAS CONTENT 📝\n\`\`\`\n${currentCanvasContent}\n\`\`\`\nIf the user asks for edits, output the FULL updated document in 'canvas_update'.`
+        : `\n\n📝 CANVAS AVAILABLE 📝\nTo write long-form content (code, articles), use 'canvas_update' JSON.`;
+
+      const groupDynamicsInstruction = activeAgents.length > 1 
+        ? `\nIMPORTANT GROUP DYNAMICS:\n- Do NOT start your response with "As [Name] said...".\n- Provide *new, additive value* based on your role (${currentAgent.role}).`
+        : "";
+
+      // Format User Directives
+      const activeDirectives = userDirectives.filter(d => d.active).map((d, i) => `${i+1}. ${d.content}`).join('\n');
+      const userDirectivesBlock = activeDirectives ? `\n--- USER-DEFINED PROTOCOLS ---\nThe user has defined these additional mandatory rules:\n${activeDirectives}` : "";
+
+      const currentDate = new Date();
+      const timeContext = `CURRENT DATE AND TIME: ${currentDate.toLocaleString('en-US', { dateStyle: 'full', timeStyle: 'short' })}.`;
+
+      const finalSystemInstruction = `
+        ${CORE_DIRECTIVES}
+        ${userDirectivesBlock}
+        ${timeContext}
+        
+        --- AGENT PROFILE ---
+        Name: ${currentAgent.name} ${currentAgent.surname}
+        Role: ${currentAgent.role}
+        
+        --- PERSONAL BACKSTORY ---
+        ${currentAgent.backstory}
+        
+        --- SYSTEM INSTRUCTIONS ---
+        ${currentAgent.systemInstruction}
+
+        --- CONTEXTUAL AWARENESS ---
+        1. COLLEAGUES PRESENT:
+        ${colleagueContext}
+
+        2. SHARED KNOWLEDGE BASE:
+        ${kbContext}
+
+        ${devilsAdvocateInstruction}
+        ${deepResearchInstruction}
+        ${canvasContext}
+        ${groupDynamicsInstruction}
+
+        3. INSTRUCTIONS & OUTPUT FORMATS:
+        - Use Markdown.
+        - **Action: Save to KB**: \`\`\`json { "new_kb_entry": { "title": "...", "category": "...", "content": "..." } } \`\`\`
+        - **Action: Create Task**: \`\`\`json { "new_task": { "title": "...", "description": "...", "priority": "...", "assignee": "...", "dueDate": "..." } } \`\`\`
+        - **Action: Chart**: \`\`\`json { "chart_data": { "title": "...", "type": "BAR|LINE|PIE", "labels": [], "datasets": [] } } \`\`\`
+        - **Action: Update Canvas**: \`\`\`json { "canvas_update": { "title": "...", "content": "..." } } \`\`\`
+        - **Action: Draft Email**: \`\`\`json { "draft_email": { "to": "...", "subject": "...", "body": "..." } } \`\`\`
+        - **Action: Schedule Meeting**: \`\`\`json { "schedule_meeting": { "title": "...", "startTime": "YYYY-MM-DDTHH:MM", "endTime": "YYYY-MM-DDTHH:MM", "description": "...", "location": "..." } } \`\`\`
+        
+        ${contextInstruction || ''}
+      `;
+
     const contents = formatHistory(history);
     const tools: Tool[] = [{ googleSearch: {} }];
     
     // Set thinking budget based on model capabilities
-    // Gemini 3 Pro max budget: 32768
-    // Gemini 2.5 Flash max budget: 24576
     let thinkingBudget = isDeepResearchMode ? 8192 : undefined;
     if (isDeepResearchMode && modelName === 'gemini-3-pro-preview') {
-        thinkingBudget = 16384; // Allow more thinking for Pro
+        thinkingBudget = 16384; 
     }
 
     const thinkingConfig = isDeepResearchMode ? { thinkingBudget } : undefined; 
@@ -174,7 +183,7 @@ export const generateAgentResponse = async (
     });
 
     const timeoutPromise = new Promise<any>((_, reject) => 
-        setTimeout(() => reject(new Error("Request timed out")), 90000) // Extended timeout for Pro models
+        setTimeout(() => reject(new Error("Request timed out")), 90000) 
     );
 
     const response = await retryWithBackoff(() => Promise.race([apiCall(), timeoutPromise]));
@@ -235,7 +244,6 @@ export const generateAgentResponse = async (
     
     const groundingMetadata = response.candidates?.[0]?.groundingMetadata as GroundingMetadata | undefined;
 
-    // Build a simplified context string for transparency
     const contextSummary = `Model: ${modelName}\nActive Agents: ${activeAgents.map(a => a.name).join(', ')}\nKnowledge Base Size: ${knowledgeBase.length} items\nActive Directives: ${userDirectives.filter(d => d.active).length}\nModes: ${isDeepResearchMode ? 'Deep Research' : ''} ${isDevilsAdvocateMode ? 'Devil\'s Advocate' : ''}`;
 
     return { text, groundingMetadata, chartData, canvasUpdate, emailDraft, calendarEvent, contextUsed: contextSummary };
@@ -250,10 +258,12 @@ export const generateAgentResponse = async (
 };
 
 export const autoFormatKnowledge = async (rawText: string): Promise<{ title: string, category: string, content: string } | null> => {
-    if (!process.env.API_KEY) return null;
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    const prompt = `Format as KB entry. RAW: "${rawText}"`;
     try {
+        const apiKey = getApiKey();
+        if (!apiKey) return null;
+        const ai = new GoogleGenAI({ apiKey: apiKey });
+        const prompt = `Format as KB entry. RAW: "${rawText}"`;
+        
         const response = (await retryWithBackoff(() => ai.models.generateContent({
             model: 'gemini-2.5-flash',
             contents: prompt,
@@ -275,10 +285,12 @@ export const autoFormatKnowledge = async (rawText: string): Promise<{ title: str
 };
 
 export const analyzeFile = async (base64Data: string, mimeType: string): Promise<{ title: string, summary: string, category: string } | null> => {
-    if (!process.env.API_KEY) return null;
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    const prompt = `Analyze for AlkaTara. Identify type, summarize, categorize (STRATEGY, KPI, LEGAL, PRODUCT, OTHER).`;
     try {
+        const apiKey = getApiKey();
+        if (!apiKey) return null;
+        const ai = new GoogleGenAI({ apiKey: apiKey });
+        const prompt = `Analyze for AlkaTara. Identify type, summarize, categorize (STRATEGY, KPI, LEGAL, PRODUCT, OTHER).`;
+        
         const response = (await retryWithBackoff(() => ai.models.generateContent({
             model: 'gemini-2.5-flash',
             contents: {
@@ -299,4 +311,97 @@ export const analyzeFile = async (base64Data: string, mimeType: string): Promise
         }))) as GenerateContentResponse;
         return response.text ? JSON.parse(response.text) : null;
     } catch (error) { return null; }
+};
+
+// --- AUDIO UTILS ---
+
+// Base64 to Bytes
+function decode(base64: string) {
+    const binaryString = atob(base64);
+    const len = binaryString.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    return bytes;
+}
+  
+// Raw PCM to AudioBuffer
+async function decodeAudioData(
+    data: Uint8Array,
+    ctx: BaseAudioContext, // Accept BaseAudioContext to support OfflineAudioContext
+    sampleRate: number = 24000,
+    numChannels: number = 1,
+  ): Promise<AudioBuffer> {
+    const dataInt16 = new Int16Array(data.buffer);
+    const frameCount = dataInt16.length / numChannels;
+    const buffer = ctx.createBuffer(numChannels, frameCount, sampleRate);
+  
+    for (let channel = 0; channel < numChannels; channel++) {
+      const channelData = buffer.getChannelData(channel);
+      for (let i = 0; i < frameCount; i++) {
+        channelData[i] = dataInt16[i * numChannels + channel] / 32768.0;
+      }
+    }
+    return buffer;
+}
+
+// Valid voices supported by the Gemini TTS model
+const VALID_VOICES = [
+    "achernar", "achird", "algenib", "algieba", "alnilam", "aoede", "autonoe", "callirrhoe", "charon",
+    "despina", "enceladus", "erinome", "fenrir", "gacrux", "iapetus", "kore", "laomedeia", "leda",
+    "orus", "puck", "pulcherrima", "rasalgethi", "sadachbia", "sadaltager", "schedar", "sulafat",
+    "umbriel", "vindemiatrix", "zephyr", "zubenelgenubi"
+];
+
+export const generateSpeech = async (text: string, voiceName: string = 'Kore'): Promise<AudioBuffer | null> => {
+    try {
+        const apiKey = getApiKey();
+        if (!apiKey) throw new Error("API Key missing");
+        
+        const ai = new GoogleGenAI({ apiKey });
+        
+        // Validate voice name, fallback to Kore if invalid/unsupported
+        let selectedVoice = voiceName;
+        if (!VALID_VOICES.includes(selectedVoice.toLowerCase())) {
+             console.warn(`Voice "${selectedVoice}" not supported. Falling back to Kore.`);
+             selectedVoice = 'Kore';
+        }
+
+        const apiCall = () => ai.models.generateContent({
+            model: "gemini-2.5-flash-preview-tts",
+            contents: [{ parts: [{ text: text }] }],
+            config: {
+              responseModalities: [Modality.AUDIO],
+              speechConfig: {
+                  voiceConfig: {
+                    prebuiltVoiceConfig: { voiceName: selectedVoice },
+                  },
+              },
+            },
+        });
+
+        // Use retry logic for TTS as well
+        const response = (await retryWithBackoff(apiCall)) as GenerateContentResponse;
+        
+        const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+        if (!base64Audio) throw new Error("No audio data received from API");
+
+        // CRITICAL FIX: Use OfflineAudioContext for decoding to prevent "Max AudioContexts reached" error.
+        // Standard AudioContext is limited by browsers (usually max 6 instances).
+        const OfflineContext = window.OfflineAudioContext || (window as any).webkitOfflineAudioContext;
+        const decodingCtx = new OfflineContext(1, 1, 24000);
+
+        const audioBuffer = await decodeAudioData(
+            decode(base64Audio),
+            decodingCtx,
+            24000,
+            1
+        );
+        return audioBuffer;
+
+    } catch (e: any) {
+        console.error("TTS Generation Error:", e);
+        throw new Error(e.message || "Failed to generate speech");
+    }
 };

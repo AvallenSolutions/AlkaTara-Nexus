@@ -1,6 +1,5 @@
-
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { useAuth, logOut } from './services/firebase';
+import { useAuth, logOut, enableDemoMode } from './services/firebase';
 import Auth from './components/Auth';
 import Sidebar from './components/Sidebar';
 import ChatArea from './components/ChatArea';
@@ -58,6 +57,9 @@ const App: React.FC = () => {
   const [isSessionModalOpen, setIsSessionModalOpen] = useState(false);
   const [sessionModalMode, setSessionModalMode] = useState<ChatMode>(ChatMode.FOCUS_GROUP);
   const [editingAgent, setEditingAgent] = useState<Agent | null>(null);
+
+  // Permission Error State
+  const [showPermissionError, setShowPermissionError] = useState(false);
   
   // Model Selection (Default: Flash)
   const [selectedModel, setSelectedModel] = useState<string>('gemini-2.5-flash');
@@ -78,6 +80,13 @@ const App: React.FC = () => {
   }, [isDarkMode]);
 
   useEffect(() => { if (user) initializeUserData(user); }, [user]);
+
+  // Listener for Firestore Permissions
+  useEffect(() => {
+      const handler = () => setShowPermissionError(true);
+      window.addEventListener('firestore-permission-error', handler);
+      return () => window.removeEventListener('firestore-permission-error', handler);
+  }, []);
 
   useEffect(() => {
     if (!user) return;
@@ -252,7 +261,6 @@ const App: React.FC = () => {
     try {
         await addMessage(user.uid, currentSessionId, userMsg);
         // If successful, we update the local status to 'undefined' (SENT)
-        // This gives immediate feedback before snapshot listener fires
         setMessages(prev => prev.map(m => m.id === userMsg.id ? { ...m, status: undefined } : m));
     } catch (error) {
         console.error("Failed to send message:", error);
@@ -339,20 +347,46 @@ const App: React.FC = () => {
                     emailDraft: result.emailDraft,
                     calendarEvent: result.calendarEvent,
                     contextUsed: result.contextUsed,
-                    canvasAction: result.canvasUpdate ? { type: 'UPDATE', title: result.canvasUpdate.title } : undefined
+                    canvasAction: result.canvasUpdate ? { type: 'UPDATE', title: result.canvasUpdate.title } : undefined,
+                    status: 'SENDING'
                 };
+
+                // OPTIMISTIC UPDATE for Agent Message
+                setMessages(prev => [...prev, agentMsg]);
 
                 try {
                     await addMessage(user.uid, currentSessionId, agentMsg);
+                    // If successful, update status locally
+                    setMessages(prev => prev.map(m => m.id === agentMsg.id ? { ...m, status: undefined } : m));
                     currentHistory.push(agentMsg); 
                 } catch (e) {
                     console.error("Failed to save agent message", e);
+                    // Mark as error locally
+                    setMessages(prev => prev.map(m => m.id === agentMsg.id ? { ...m, status: 'ERROR' } : m));
                 }
 
-            } catch (e) { console.error(e); }
+            } catch (e) { 
+                console.error("Agent generation error", e);
+                // Create an error message in the chat so the user knows it failed
+                const errorMsg: Message = {
+                    id: generateId(),
+                    senderId: 'system',
+                    senderName: 'System',
+                    content: `**System Error:** Unable to generate response from ${agent.name}. (${e instanceof Error ? e.message : 'Unknown error'})`,
+                    timestamp: Date.now(),
+                    isUser: false,
+                    status: 'ERROR'
+                };
+                setMessages(prev => [...prev, errorMsg]); 
+            }
         }
-    } catch (error) { console.error(error); } 
-    finally { setProcessingAgentName(null); setIsHuddle(false); abortControllerRef.current = null; }
+    } catch (error) { 
+        console.error("Global chat error", error); 
+    } finally { 
+        setProcessingAgentName(null); 
+        setIsHuddle(false); 
+        abortControllerRef.current = null; 
+    }
   };
 
   const handleRegenerate = async () => {
@@ -383,7 +417,57 @@ const App: React.FC = () => {
      : INITIAL_AGENTS.filter(a => selectedAgentIds.includes(a.id));
 
   return (
-    <div className="flex h-screen bg-white dark:bg-avallen-900 overflow-hidden font-sans transition-colors duration-300">
+    <div className="flex h-screen bg-white dark:bg-avallen-900 overflow-hidden font-sans transition-colors duration-300 relative">
+      
+      {/* Permission Error Overlay */}
+      {showPermissionError && (
+          <div className="absolute inset-0 z-[60] bg-black/80 backdrop-blur-sm flex items-center justify-center p-6">
+              <div className="bg-white dark:bg-avallen-800 max-w-lg w-full rounded-xl shadow-2xl p-6 border border-red-200 dark:border-red-900">
+                  <div className="flex items-center gap-3 mb-4 text-red-600 dark:text-red-400">
+                      <i className="fa-solid fa-triangle-exclamation text-3xl"></i>
+                      <h2 className="text-xl font-bold">Database Access Denied</h2>
+                  </div>
+                  
+                  <div className="text-sm text-gray-700 dark:text-slate-300 space-y-4 mb-6">
+                      <p>Your application is trying to save data to Firestore, but the request was blocked. This usually happens for two reasons:</p>
+                      <ul className="list-disc pl-5 space-y-2">
+                          <li>You are using the <strong>default project keys</strong> provided in the source code, which do not allow write access (read-only).</li>
+                          <li>You created your own Firebase project but haven't configured the <strong>Firestore Security Rules</strong> to allow user access.</li>
+                      </ul>
+
+                      <div className="bg-gray-100 dark:bg-avallen-900 p-3 rounded text-xs font-mono overflow-x-auto border border-gray-200 dark:border-avallen-700">
+                        <p className="text-gray-500 mb-1">// Recommended Firestore Rules</p>
+                        rules_version = '2';<br/>
+                        service cloud.firestore {'{'}<br/>
+                        &nbsp;&nbsp;match /databases/{'{database}'}/documents {'{'}<br/>
+                        &nbsp;&nbsp;&nbsp;&nbsp;match /users/{'{userId}'}/{'{document=**}'} {'{'}<br/>
+                        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;allow read, write: if request.auth != null && request.auth.uid == userId;<br/>
+                        &nbsp;&nbsp;&nbsp;&nbsp;{'}'}<br/>
+                        &nbsp;&nbsp;{'}'}<br/>
+                        {'}'}
+                      </div>
+                  </div>
+
+                  <div className="flex flex-col gap-3">
+                      <button 
+                        onClick={enableDemoMode}
+                        className="w-full bg-amber-500 hover:bg-amber-600 text-white font-bold py-3 rounded-lg flex items-center justify-center gap-2"
+                      >
+                         <i className="fa-solid fa-flask"></i> Switch to Demo Mode
+                      </button>
+                      <p className="text-center text-xs text-gray-500">Demo mode saves data to your browser (Local Storage) instead of the cloud.</p>
+                      
+                      <button 
+                        onClick={() => setShowPermissionError(false)}
+                        className="text-sm text-gray-400 hover:text-gray-600 dark:hover:text-white mt-2"
+                      >
+                          Dismiss (App may be broken)
+                      </button>
+                  </div>
+              </div>
+          </div>
+      )}
+
       <Sidebar 
         agents={agents.length ? agents : INITIAL_AGENTS} 
         selectedAgents={selectedAgentIds} chatMode={chatMode} viewMode={viewMode}

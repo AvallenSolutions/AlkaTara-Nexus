@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Agent } from '../types';
+import { generateSpeech } from '../services/geminiService';
 
 interface AgentModalProps {
   isOpen: boolean;
@@ -9,6 +10,19 @@ interface AgentModalProps {
   onDelete?: (agentId: string) => void;
   initialAgent?: Agent | null;
 }
+
+// High-Quality Gemini TTS Voices (Subset of valid voices)
+const GEMINI_VOICES = [
+    { name: 'Kore', gender: 'Female', style: 'Clear, Professional, Balanced' },
+    { name: 'Puck', gender: 'Male', style: 'Neutral, Approachable' },
+    { name: 'Charon', gender: 'Male', style: 'Deep, Serious, Authoritative' },
+    { name: 'Fenrir', gender: 'Male', style: 'Energetic, Strong' },
+    { name: 'Zephyr', gender: 'Female', style: 'Soft, Calm, Empathetic' },
+    { name: 'Aoede', gender: 'Female', style: 'Confident, Deep' },
+    { name: 'Leda', gender: 'Female', style: 'Sophisticated, Formal' },
+    { name: 'Iapetus', gender: 'Male', style: 'Calm, Resonant' },
+    { name: 'Orus', gender: 'Male', style: 'Deep, Monotone' }
+];
 
 const AgentModal: React.FC<AgentModalProps> = ({ isOpen, onClose, onSave, onDelete, initialAgent }) => {
   const [formData, setFormData] = useState<Partial<Agent>>({
@@ -20,19 +34,10 @@ const AgentModal: React.FC<AgentModalProps> = ({ isOpen, onClose, onSave, onDele
     backstory: '',
     avatarUrl: '',
     avatarColor: 'bg-slate-600',
-    voiceURI: ''
+    voiceURI: 'Kore' // Default
   });
 
-  const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
-
-  useEffect(() => {
-    const loadVoices = () => {
-        const voices = window.speechSynthesis.getVoices();
-        setAvailableVoices(voices);
-    };
-    loadVoices();
-    window.speechSynthesis.onvoiceschanged = loadVoices;
-  }, []);
+  const [isPlaying, setIsPlaying] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -49,13 +54,32 @@ const AgentModal: React.FC<AgentModalProps> = ({ isOpen, onClose, onSave, onDele
                 backstory: '',
                 avatarUrl: '',
                 avatarColor: 'bg-slate-600',
-                voiceURI: ''
+                voiceURI: 'Kore'
             });
         }
     }
   }, [isOpen, initialAgent]);
 
   if (!isOpen) return null;
+
+  const testVoice = async () => {
+      if (isPlaying) return;
+      setIsPlaying(true);
+      const text = `Hello, I am ${formData.name || 'your agent'}. This is my voice.`;
+      const buffer = await generateSpeech(text, formData.voiceURI || 'Kore');
+      
+      if (buffer) {
+          const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+          const source = ctx.createBufferSource();
+          source.buffer = buffer;
+          source.connect(ctx.destination);
+          source.onended = () => setIsPlaying(false);
+          source.start(0);
+      } else {
+          setIsPlaying(false);
+          alert("Could not generate audio preview.");
+      }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -72,7 +96,8 @@ const AgentModal: React.FC<AgentModalProps> = ({ isOpen, onClose, onSave, onDele
       avatarUrl: formData.avatarUrl,
       avatarColor: formData.avatarColor || 'bg-slate-600',
       voiceURI: formData.voiceURI,
-      isCustom: true
+      isCustom: true,
+      gender: formData.gender
     };
     
     onSave(agentToSave);
@@ -135,19 +160,42 @@ const AgentModal: React.FC<AgentModalProps> = ({ isOpen, onClose, onSave, onDele
                         required
                     />
                 </div>
-                <div>
-                    <label className="block text-xs font-bold text-gray-500 dark:text-slate-400 uppercase mb-1">Voice</label>
+                 <div>
+                    <label className="block text-xs font-bold text-gray-500 dark:text-slate-400 uppercase mb-1">Gender (Metadata)</label>
                     <select 
-                        value={formData.voiceURI || ''}
-                        onChange={e => setFormData({...formData, voiceURI: e.target.value})}
+                        value={formData.gender || 'male'}
+                        onChange={e => setFormData({...formData, gender: e.target.value as any})}
                         className="w-full bg-gray-50 dark:bg-avallen-900/50 border border-gray-300 dark:border-avallen-600 rounded p-2 text-gray-900 dark:text-white focus:border-avallen-accent outline-none"
                     >
-                        <option value="">Default Browser Voice</option>
-                        {availableVoices.map(v => (
-                            <option key={v.voiceURI} value={v.voiceURI}>{v.name} ({v.lang})</option>
-                        ))}
+                        <option value="male">Male</option>
+                        <option value="female">Female</option>
                     </select>
                 </div>
+            </div>
+            
+            <div>
+                <label className="block text-xs font-bold text-gray-500 dark:text-slate-400 uppercase mb-1">Premium AI Voice</label>
+                <div className="flex gap-2">
+                    <select 
+                        value={formData.voiceURI || 'Kore'}
+                        onChange={e => setFormData({...formData, voiceURI: e.target.value})}
+                        className="flex-1 bg-gray-50 dark:bg-avallen-900/50 border border-gray-300 dark:border-avallen-600 rounded p-2 text-gray-900 dark:text-white focus:border-avallen-accent outline-none"
+                    >
+                        {GEMINI_VOICES.map(v => (
+                            <option key={v.name} value={v.name}>{v.name} ({v.gender} - {v.style})</option>
+                        ))}
+                    </select>
+                    <button 
+                        type="button"
+                        onClick={testVoice}
+                        disabled={isPlaying}
+                        className={`px-3 rounded transition-colors text-gray-700 dark:text-white ${isPlaying ? 'bg-avallen-accent animate-pulse text-white' : 'bg-gray-200 dark:bg-avallen-700 hover:bg-gray-300 dark:hover:bg-avallen-600'}`}
+                        title="Test Voice"
+                    >
+                        <i className={`fa-solid ${isPlaying ? 'fa-spinner fa-spin' : 'fa-play'}`}></i>
+                    </button>
+                </div>
+                <p className="text-[10px] text-gray-400 dark:text-slate-500 mt-1">Using Google's high-fidelity Gemini 2.5 TTS model.</p>
             </div>
 
             <div>

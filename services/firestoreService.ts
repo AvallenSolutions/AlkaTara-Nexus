@@ -22,6 +22,39 @@ import { INITIAL_AGENTS, MOCK_KNOWLEDGE_BASE } from '../constants';
 const getMockData = (key: string) => JSON.parse(localStorage.getItem(key) || '[]');
 const setMockData = (key: string, data: any) => localStorage.setItem(key, JSON.stringify(data));
 
+// --- ERROR HANDLING & SANITIZATION ---
+const checkPermissionError = (error: any) => {
+    if (error && (error.code === 'permission-denied' || error.message?.includes('permission-denied') || error.code === 'f' || error.toString().includes('Missing or insufficient permissions'))) {
+        console.warn("Firestore Permission Error Detected");
+        window.dispatchEvent(new CustomEvent('firestore-permission-error'));
+    }
+};
+
+// Firestore throws error if a field is 'undefined'. We must remove them or convert to null.
+const removeUndefined = (obj: any): any => {
+    if (Array.isArray(obj)) {
+        return obj.map(v => removeUndefined(v));
+    } else if (obj !== null && typeof obj === 'object') {
+        return Object.keys(obj).reduce((acc, key) => {
+            const value = obj[key];
+            if (value !== undefined) {
+                acc[key] = removeUndefined(value);
+            }
+            return acc;
+        }, {} as any);
+    }
+    return obj;
+};
+
+const safeWrite = async (operation: () => Promise<void>) => {
+    try {
+        await operation();
+    } catch (error: any) {
+        checkPermissionError(error);
+        throw error; // Re-throw so UI knows the specific action failed
+    }
+};
+
 // --- USER PROFILE MANAGEMENT ---
 
 export const readUserData = async (userId: string) => {
@@ -38,6 +71,7 @@ export const readUserData = async (userId: string) => {
     }
   } catch (error) {
     console.error("Error reading user data:", error);
+    checkPermissionError(error);
     return null;
   }
 };
@@ -50,11 +84,7 @@ export const writeUserData = async (userId: string, dataToSave: { displayName?: 
   }
   
   const userDocRef = doc(db, "users", userId);
-  try {
-    await setDoc(userDocRef, dataToSave, { merge: true });
-  } catch (error) {
-    console.error("Error writing user data:", error);
-  }
+  await safeWrite(() => setDoc(userDocRef, removeUndefined(dataToSave), { merge: true }));
 };
 
 /**
@@ -65,11 +95,16 @@ export const initializeUserData = async (user: User) => {
   const userId = user.uid;
 
   // Sync User Profile
-  await writeUserData(userId, {
-      displayName: user.displayName,
-      email: user.email,
-      lastLogin: Date.now()
-  });
+  try {
+    await writeUserData(userId, {
+        displayName: user.displayName,
+        email: user.email,
+        lastLogin: Date.now()
+    });
+  } catch (e) {
+      // If profile write fails (permissions), we stop here to avoid flooding with other errors
+      return;
+  }
 
   if (isMock) {
       // Seed local storage if empty
@@ -92,21 +127,22 @@ export const initializeUserData = async (user: User) => {
       const batch = writeBatch(db);
       INITIAL_AGENTS.forEach(agent => {
         const docRef = doc(agentsRef, agent.id);
-        batch.set(docRef, agent);
+        batch.set(docRef, removeUndefined(agent));
       });
       MOCK_KNOWLEDGE_BASE.forEach(kb => {
         const docRef = doc(kbRef, kb.id);
-        batch.set(docRef, { 
+        batch.set(docRef, removeUndefined({ 
             ...kb, 
             type: 'NOTE', 
             folderId: null, 
             timestamp: Timestamp.fromMillis(kb.timestamp) 
-        });
+        }));
       });
       await batch.commit();
     }
   } catch (error) {
     console.error("Error seeding data:", error);
+    checkPermissionError(error);
   }
 };
 
@@ -125,6 +161,10 @@ export const listenToAgents = (userId: string, callback: (agents: Agent[]) => vo
   return onSnapshot(q, (snapshot) => {
     const agents = snapshot.docs.map(d => d.data() as Agent);
     callback(agents.length ? agents : INITIAL_AGENTS);
+  }, (error) => {
+      checkPermissionError(error);
+      // Fallback to initial agents on permission error so app is usable
+      callback(INITIAL_AGENTS);
   });
 };
 
@@ -139,7 +179,7 @@ export const saveAgent = async (userId: string, agent: Agent) => {
         return;
     }
     const ref = doc(collection(db, 'users', userId, 'agents'), agent.id);
-    await setDoc(ref, agent, { merge: true });
+    await safeWrite(() => setDoc(ref, removeUndefined(agent), { merge: true }));
 };
 
 export const deleteAgent = async (userId: string, agentId: string) => {
@@ -151,7 +191,7 @@ export const deleteAgent = async (userId: string, agentId: string) => {
         return;
     }
     const ref = doc(collection(db, 'users', userId, 'agents'), agentId);
-    await deleteDoc(ref);
+    await safeWrite(() => deleteDoc(ref));
 };
 
 export const listenToKnowledgeBase = (userId: string, callback: (items: KnowledgeItem[]) => void) => {
@@ -185,6 +225,9 @@ export const listenToKnowledgeBase = (userId: string, callback: (items: Knowledg
         } as KnowledgeItem;
     });
     callback(items);
+  }, (error) => {
+      checkPermissionError(error);
+      // Don't callback with empty on error to avoid wiping UI if data existed
   });
 };
 
@@ -200,7 +243,7 @@ export const listenToFolders = (userId: string, callback: (folders: Folder[]) =>
     return onSnapshot(q, (snapshot) => {
         const folders = snapshot.docs.map(d => d.data() as Folder);
         callback(folders);
-    });
+    }, (error) => checkPermissionError(error));
 };
 
 export const createFolder = async (userId: string, folder: Folder) => {
@@ -212,7 +255,7 @@ export const createFolder = async (userId: string, folder: Folder) => {
         return;
     }
     const ref = doc(collection(db, 'users', userId, 'folders'), folder.id);
-    await setDoc(ref, folder);
+    await safeWrite(() => setDoc(ref, removeUndefined(folder)));
 };
 
 export const deleteFolder = async (userId: string, folderId: string) => {
@@ -224,7 +267,7 @@ export const deleteFolder = async (userId: string, folderId: string) => {
         return;
     }
     const ref = doc(collection(db, 'users', userId, 'folders'), folderId);
-    await deleteDoc(ref);
+    await safeWrite(() => deleteDoc(ref));
 };
 
 /** SESSION MANAGEMENT **/
@@ -244,7 +287,7 @@ export const listenToUserSessions = (userId: string, callback: (sessions: ChatSe
     return onSnapshot(q, (snapshot) => {
         const sessions = snapshot.docs.map(d => d.data() as ChatSession);
         callback(sessions);
-    });
+    }, (error) => checkPermissionError(error));
 };
 
 export const createNewSession = async (userId: string, session: ChatSession) => {
@@ -256,7 +299,7 @@ export const createNewSession = async (userId: string, session: ChatSession) => 
         return;
     }
     const ref = doc(collection(db, 'users', userId, 'sessions'), session.id);
-    await setDoc(ref, session);
+    await safeWrite(() => setDoc(ref, removeUndefined(session)));
 };
 
 export const deleteSession = async (userId: string, sessionId: string) => {
@@ -267,7 +310,7 @@ export const deleteSession = async (userId: string, sessionId: string) => {
         window.dispatchEvent(new Event('mock-session-change'));
         return;
     }
-    await deleteDoc(doc(db, 'users', userId, 'sessions', sessionId));
+    await safeWrite(() => deleteDoc(doc(db, 'users', userId, 'sessions', sessionId)));
 };
 
 export const listenToMessages = (userId: string, sessionId: string, callback: (msgs: Message[]) => void) => {
@@ -299,8 +342,7 @@ export const listenToMessages = (userId: string, sessionId: string, callback: (m
     callback(messages);
   }, (error) => {
       console.error("Error listening to messages:", error);
-      // We don't want to crash the app if permission denied or network error
-      // The UI handles local state separately in App.tsx
+      checkPermissionError(error);
   });
 };
 
@@ -325,11 +367,13 @@ export const addMessage = async (userId: string, sessionId: string, message: Mes
   const ref = doc(collection(db, 'users', userId, 'sessions', sessionId, 'messages'), message.id);
   // Sanitize message: Remove 'status' as that is a local-only field
   const { status, ...dbMessage } = message;
-  await setDoc(ref, dbMessage);
   
-  // Update session timestamp
-  const sessionRef = doc(db, 'users', userId, 'sessions', sessionId);
-  await updateDoc(sessionRef, { lastMessageAt: Date.now() });
+  await safeWrite(async () => {
+      await setDoc(ref, removeUndefined(dbMessage));
+      // Update session timestamp
+      const sessionRef = doc(db, 'users', userId, 'sessions', sessionId);
+      await updateDoc(sessionRef, { lastMessageAt: Date.now() });
+  });
 };
 
 export const updateMessage = async (userId: string, sessionId: string, message: Message) => {
@@ -345,7 +389,7 @@ export const updateMessage = async (userId: string, sessionId: string, message: 
     }
     const ref = doc(collection(db, 'users', userId, 'sessions', sessionId, 'messages'), message.id);
     const { status, ...dbMessage } = message;
-    await setDoc(ref, dbMessage, { merge: true });
+    await safeWrite(() => setDoc(ref, removeUndefined(dbMessage), { merge: true }));
 };
 
 export const addKnowledgeItem = async (userId: string, item: KnowledgeItem) => {
@@ -357,7 +401,7 @@ export const addKnowledgeItem = async (userId: string, item: KnowledgeItem) => {
       return;
   }
   const ref = doc(collection(db, 'users', userId, 'knowledge_base'), item.id);
-  await setDoc(ref, { ...item, timestamp: Timestamp.fromMillis(item.timestamp) });
+  await safeWrite(() => setDoc(ref, removeUndefined({ ...item, timestamp: Timestamp.fromMillis(item.timestamp) })));
 };
 
 export const updateKnowledgeItem = async (userId: string, item: KnowledgeItem) => {
@@ -372,7 +416,7 @@ export const updateKnowledgeItem = async (userId: string, item: KnowledgeItem) =
       return;
   }
   const ref = doc(collection(db, 'users', userId, 'knowledge_base'), item.id);
-  await setDoc(ref, { ...item, timestamp: Timestamp.fromMillis(item.timestamp) }, { merge: true });
+  await safeWrite(() => setDoc(ref, removeUndefined({ ...item, timestamp: Timestamp.fromMillis(item.timestamp) }), { merge: true }));
 };
 
 export const deleteKnowledgeItem = async (userId: string, itemId: string) => {
@@ -384,7 +428,7 @@ export const deleteKnowledgeItem = async (userId: string, itemId: string) => {
       return;
   }
   const ref = doc(collection(db, 'users', userId, 'knowledge_base'), itemId);
-  await deleteDoc(ref);
+  await safeWrite(() => deleteDoc(ref));
 };
 
 export const listenToTasks = (userId: string, callback: (tasks: Task[]) => void) => {
@@ -399,7 +443,7 @@ export const listenToTasks = (userId: string, callback: (tasks: Task[]) => void)
     return onSnapshot(q, (snapshot) => {
         const tasks = snapshot.docs.map(d => d.data() as Task);
         callback(tasks);
-    });
+    }, (error) => checkPermissionError(error));
 };
 
 export const updateTask = async (userId: string, task: Task) => {
@@ -413,7 +457,7 @@ export const updateTask = async (userId: string, task: Task) => {
         return;
     }
     const ref = doc(collection(db, 'users', userId, 'tasks'), task.id);
-    await setDoc(ref, task, { merge: true });
+    await safeWrite(() => setDoc(ref, removeUndefined(task), { merge: true }));
 };
 
 export const deleteTask = async (userId: string, taskId: string) => {
@@ -425,7 +469,7 @@ export const deleteTask = async (userId: string, taskId: string) => {
         return;
     }
     const ref = doc(collection(db, 'users', userId, 'tasks'), taskId);
-    await deleteDoc(ref);
+    await safeWrite(() => deleteDoc(ref));
 };
 
 /** DIRECTIVES **/
@@ -444,7 +488,7 @@ export const listenToDirectives = (userId: string, callback: (directives: Direct
     return onSnapshot(q, (snapshot) => {
         const data = snapshot.docs.map(d => d.data() as Directive);
         callback(data);
-    });
+    }, (error) => checkPermissionError(error));
 };
 
 export const saveDirective = async (userId: string, directive: Directive) => {
@@ -457,7 +501,7 @@ export const saveDirective = async (userId: string, directive: Directive) => {
         window.dispatchEvent(new Event('mock-directive-change'));
         return;
     }
-    await setDoc(doc(db, 'users', userId, 'directives', directive.id), directive);
+    await safeWrite(() => setDoc(doc(db, 'users', userId, 'directives', directive.id), removeUndefined(directive)));
 };
 
 export const deleteDirective = async (userId: string, id: string) => {
@@ -468,5 +512,5 @@ export const deleteDirective = async (userId: string, id: string) => {
         window.dispatchEvent(new Event('mock-directive-change'));
         return;
     }
-    await deleteDoc(doc(db, 'users', userId, 'directives', id));
+    await safeWrite(() => deleteDoc(doc(db, 'users', userId, 'directives', id)));
 };

@@ -60,6 +60,7 @@ export interface Agent {
   avatarColor: string; // Fallback
   isCustom?: boolean;
   voiceURI?: string; // For TTS
+  gender?: 'male' | 'female'; // New field for Voice Selection
 }
 
 export interface EmailDraft {

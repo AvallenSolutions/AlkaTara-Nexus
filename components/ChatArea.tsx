@@ -3,6 +3,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Message, Agent, ChatMode, Attachment, ChartData, EmailDraft, CalendarEvent } from '../types';
+import { generateSpeech } from '../services/geminiService';
 
 interface ChatAreaProps {
   messages: Message[];
@@ -139,11 +140,13 @@ const ChatArea: React.FC<ChatAreaProps> = ({
   const [isListening, setIsListening] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearch, setShowSearch] = useState(false);
+  const [playingMessageId, setPlayingMessageId] = useState<string | null>(null);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const shouldAutoScrollRef = useRef(true);
+  const audioContextRef = useRef<AudioContext | null>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -192,25 +195,84 @@ const ChatArea: React.FC<ChatAreaProps> = ({
     }
   };
 
-  const getAgentVoice = (name: string) => {
-      const agent = activeAgents.find(a => name.includes(a.name));
-      return agent?.voiceURI;
-  }
+  // Robust Text Cleaning to prevent emoji vocalization
+  const cleanTextForTTS = (text: string): string => {
+      // 1. Remove Markdown symbols (*, #, _, `, >, ~)
+      let clean = text.replace(/[*#_`>~]/g, '');
+      
+      // 2. Remove Links [Link](url) -> Link
+      clean = clean.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
 
-  const speakText = (text: string, voiceURI?: string) => {
-      window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.rate = 1.0;
-      if (voiceURI) {
-          const voice = window.speechSynthesis.getVoices().find(v => v.voiceURI === voiceURI);
-          if (voice) utterance.voice = voice;
+      // 3. Remove URLs entirely if they stand alone
+      clean = clean.replace(/https?:\/\/\S+/g, 'link');
+      
+      // 4. Robust Emoji Removal (Unicode ranges)
+      clean = clean.replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F900}-\u{1F9FF}\u{1F018}-\u{1F270}\u{2300}-\u{23FF}\u{2B50}\u{2934}\u{2935}\u{200D}]/gu, '');
+      
+      return clean.trim();
+  };
+
+  const speakText = async (text: string, agent?: Agent, messageId?: string) => {
+      // Stop current playback
+      if (audioContextRef.current) {
+          try {
+            await audioContextRef.current.close();
+          } catch (e) {
+            console.warn("Error closing audio context:", e);
+          }
+          audioContextRef.current = null;
+          setPlayingMessageId(null);
       }
-      window.speechSynthesis.speak(utterance);
+
+      // If clicking the same message, just toggle off
+      if (playingMessageId === messageId) {
+          return;
+      }
+
+      const cleanedText = cleanTextForTTS(text);
+      if (!cleanedText) {
+        return; // Nothing to speak
+      }
+
+      if (messageId) setPlayingMessageId(messageId);
+      const voiceName = agent?.voiceURI || 'Kore'; // Default to Kore if no voice set
+
+      try {
+          const buffer = await generateSpeech(cleanedText, voiceName);
+          
+          if (buffer) {
+              const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+              audioContextRef.current = ctx;
+              
+              // Resume context if suspended (Chrome autoplay policy)
+              if (ctx.state === 'suspended') {
+                  await ctx.resume();
+              }
+
+              const source = ctx.createBufferSource();
+              source.buffer = buffer;
+              source.connect(ctx.destination);
+              source.onended = () => {
+                  setPlayingMessageId(null);
+                  ctx.close().catch(e => console.warn("Context close error", e));
+                  audioContextRef.current = null;
+              };
+              source.start(0);
+          } else {
+              setPlayingMessageId(null);
+              alert("Could not generate audio.");
+          }
+      } catch (e: any) {
+          setPlayingMessageId(null);
+          console.error(e);
+          if (!e.message?.includes('The user aborted a request')) {
+             alert(`TTS Error: ${e.message}`);
+          }
+      }
   };
 
   const copyToClipboard = (text: string) => {
       navigator.clipboard.writeText(text);
-      // Could show toast here
   };
 
   const toggleVoiceInput = () => {
@@ -268,9 +330,14 @@ const ChatArea: React.FC<ChatAreaProps> = ({
       m.senderName.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const getAgentAvatar = (name: string) => {
-    const agent = activeAgents.find(a => name.includes(a.name));
+  const getAgentAvatar = (senderId: string, senderName: string) => {
+    // Try to find by ID first (more reliable), then name
+    const agent = activeAgents.find(a => a.id === senderId) || activeAgents.find(a => senderName.includes(a.name));
     return agent?.avatarUrl || null;
+  };
+
+  const getAgentForMessage = (msg: Message) => {
+      return activeAgents.find(a => a.id === msg.senderId) || activeAgents.find(a => msg.senderName.includes(a.name));
   };
 
   const processingAgent = processingAgentName ? activeAgents.find(a => processingAgentName.includes(a.name)) : null;
@@ -324,9 +391,10 @@ const ChatArea: React.FC<ChatAreaProps> = ({
         className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6"
       >
         {filteredMessages.map((msg, idx) => {
-            const avatarUrl = !msg.isUser ? getAgentAvatar(msg.senderName) : null;
+            const avatarUrl = !msg.isUser ? getAgentAvatar(msg.senderId, msg.senderName) : null;
             const isLast = idx === messages.length - 1;
-            const voiceURI = !msg.isUser ? getAgentVoice(msg.senderName) : undefined;
+            const agent = !msg.isUser ? getAgentForMessage(msg) : undefined;
+            const isPlaying = playingMessageId === msg.id;
             
             return (
             <div key={msg.id} className={`flex w-full ${msg.isUser ? 'justify-end' : 'justify-start'}`}>
@@ -344,6 +412,7 @@ const ChatArea: React.FC<ChatAreaProps> = ({
                             ${msg.isUser ? 'bg-avallen-accent text-white rounded-tr-none' : 'bg-white dark:bg-avallen-800 border border-gray-200 dark:border-avallen-700 text-gray-800 dark:text-slate-200 rounded-tl-none'}
                             ${msg.status === 'SENDING' ? 'opacity-70' : ''}
                             ${msg.status === 'ERROR' ? 'border-red-500 dark:border-red-500' : ''}
+                            ${isPlaying ? 'ring-2 ring-avallen-accent' : ''}
                         `}>
                             {/* Context Indicator */}
                             {msg.contextUsed && (
@@ -396,7 +465,14 @@ const ChatArea: React.FC<ChatAreaProps> = ({
                                 <div className="mt-3 pt-2 border-t border-gray-200 dark:border-white/10 flex justify-between items-center gap-3 opacity-0 group-hover:opacity-100 transition-opacity">
                                     <div className="flex gap-3 items-center">
                                         <button onClick={() => copyToClipboard(msg.content)} className="text-xs text-gray-400 dark:text-slate-500 hover:text-gray-700 dark:hover:text-white" title="Copy Text"><i className="fa-regular fa-copy"></i></button>
-                                        <button onClick={() => speakText(msg.content, voiceURI)} className="text-xs text-gray-400 dark:text-slate-500 hover:text-gray-700 dark:hover:text-white" title="Read Aloud"><i className="fa-solid fa-volume-high"></i></button>
+                                        
+                                        <button 
+                                            onClick={() => speakText(msg.content, agent, msg.id)} 
+                                            className={`text-xs ${isPlaying ? 'text-avallen-accent animate-pulse' : 'text-gray-400 dark:text-slate-500 hover:text-gray-700 dark:hover:text-white'}`} 
+                                            title="Read Aloud"
+                                        >
+                                            <i className={`fa-solid ${isPlaying ? 'fa-stop' : 'fa-volume-high'}`}></i>
+                                        </button>
                                         
                                         {/* Feedback */}
                                         <div className="h-3 w-[1px] bg-gray-300 dark:bg-avallen-700 mx-1"></div>
@@ -419,12 +495,12 @@ const ChatArea: React.FC<ChatAreaProps> = ({
 
                             {/* Error / Status State */}
                             {msg.status === 'ERROR' && (
-                                <div className="absolute -bottom-6 right-0 text-xs text-red-500 font-bold flex items-center gap-1 bg-white dark:bg-avallen-800 px-1 rounded">
+                                <div className={`absolute -bottom-6 ${msg.isUser ? 'right-0' : 'left-0'} text-xs text-red-500 font-bold flex items-center gap-1 bg-white dark:bg-avallen-800 px-1 rounded`}>
                                     <i className="fa-solid fa-circle-exclamation"></i> Failed to send
                                 </div>
                             )}
                             {msg.status === 'SENDING' && (
-                                <div className="absolute -bottom-5 right-0 text-[10px] text-gray-400 italic">
+                                <div className={`absolute -bottom-5 ${msg.isUser ? 'right-0' : 'left-0'} text-[10px] text-gray-400 italic`}>
                                     Sending...
                                 </div>
                             )}

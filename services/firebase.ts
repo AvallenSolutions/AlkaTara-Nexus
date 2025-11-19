@@ -21,14 +21,23 @@ import React from 'react';
 // Access globals safely
 const win = window as any;
 
+const getEnv = (key: string) => {
+    try {
+        // @ts-ignore
+        return process.env[key];
+    } catch (e) {
+        return undefined;
+    }
+};
+
 // Configuration from snippet
 const firebaseConfig = win.__firebase_config || {
-  apiKey: process.env.FIREBASE_API_KEY || "AIzaSyBQaZ55RPKFHgZ90Xbh4SpIu9IrP1E--iY",
-  authDomain: process.env.FIREBASE_AUTH_DOMAIN || "alkatara-nexus.firebaseapp.com",
-  projectId: process.env.FIREBASE_PROJECT_ID || "alkatara-nexus",
-  storageBucket: process.env.FIREBASE_STORAGE_BUCKET || "alkatara-nexus.firebasestorage.app",
-  messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID || "795944217054",
-  appId: process.env.FIREBASE_APP_ID || "1:795944217054:web:9333ce07fdd4a579bbd54f",
+  apiKey: getEnv('FIREBASE_API_KEY') || "AIzaSyBQaZ55RPKFHgZ90Xbh4SpIu9IrP1E--iY",
+  authDomain: getEnv('FIREBASE_AUTH_DOMAIN') || "alkatara-nexus.firebaseapp.com",
+  projectId: getEnv('FIREBASE_PROJECT_ID') || "alkatara-nexus",
+  storageBucket: getEnv('FIREBASE_STORAGE_BUCKET') || "alkatara-nexus.firebasestorage.app",
+  messagingSenderId: getEnv('FIREBASE_MESSAGING_SENDER_ID') || "795944217054",
+  appId: getEnv('FIREBASE_APP_ID') || "1:795944217054:web:9333ce07fdd4a579bbd54f",
   measurementId: "G-JCV66BGLQV"
 };
 
@@ -57,7 +66,7 @@ const keysMissing = !firebaseConfig.apiKey;
 // 1. DEMO_MODE env var is true
 // 2. Manually forced via UI
 // 3. We are in a DEV environment AND keys are missing
-export const isMock = process.env.DEMO_MODE === 'true' || forceDemo || (isDevEnvironment && keysMissing);
+export const isMock = getEnv('DEMO_MODE') === 'true' || forceDemo || (isDevEnvironment && keysMissing);
 
 if (!getApps().length && !isMock) {
   try {
