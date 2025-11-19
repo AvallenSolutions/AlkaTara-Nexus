@@ -1,7 +1,8 @@
+
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { KnowledgeItem, Folder } from '../types';
 import { addKnowledgeItem, updateKnowledgeItem, deleteKnowledgeItem, createFolder, deleteFolder } from '../services/firestoreService';
-import { autoFormatKnowledge, analyzeFile } from '../services/geminiService';
+import { autoFormatKnowledge, analyzeFile, analyzeUrl } from '../services/geminiService';
 import { useAuth } from '../services/firebase';
 
 interface KnowledgeBasePanelProps {
@@ -47,6 +48,7 @@ const KnowledgeBasePanel: React.FC<KnowledgeBasePanelProps> = ({ isOpen, onClose
   }>({ title: '', category: 'STRATEGY', content: '' });
 
   const [isLoading, setIsLoading] = useState(false);
+  const [isFetchingUrl, setIsFetchingUrl] = useState(false);
 
   // Reset when folder changes or closed
   useEffect(() => {
@@ -140,6 +142,23 @@ const KnowledgeBasePanel: React.FC<KnowledgeBasePanelProps> = ({ isOpen, onClose
       setIsLoading(false);
   };
 
+  const handleFetchUrl = async () => {
+      if (!formData.url) return;
+      setIsFetchingUrl(true);
+      const result = await analyzeUrl(formData.url);
+      if (result) {
+          setFormData(prev => ({
+              ...prev,
+              title: result.title,
+              category: result.category,
+              content: result.summary
+          }));
+      } else {
+          setFormData(prev => ({ ...prev, content: "Failed to analyze URL. Please try again or check if the site allows scraping." }));
+      }
+      setIsFetchingUrl(false);
+  };
+
   const handleSave = async () => {
       if (!user || !formData.title) return;
       setIsLoading(true);
@@ -199,6 +218,7 @@ const KnowledgeBasePanel: React.FC<KnowledgeBasePanelProps> = ({ isOpen, onClose
   const getFileIcon = (mime?: string) => {
       if (!mime) return 'fa-file';
       if (mime.includes('pdf')) return 'fa-file-pdf text-red-600';
+      if (mime.includes('word') || mime.includes('document')) return 'fa-file-word text-blue-600';
       if (mime.includes('image')) return 'fa-file-image text-purple-600';
       if (mime.includes('sheet') || mime.includes('csv')) return 'fa-file-excel text-green-600';
       return 'fa-file-alt text-gray-600';
@@ -444,19 +464,22 @@ const KnowledgeBasePanel: React.FC<KnowledgeBasePanelProps> = ({ isOpen, onClose
                                   {uploadType === 'LINK' && (
                                       <div>
                                           <label className="block text-xs font-black text-black dark:text-white uppercase mb-1 bg-yellow-300 inline-block px-1 border border-black">URL</label>
-                                          <input 
-                                            type="text" 
-                                            value={formData.url || ''}
-                                            onChange={(e) => setFormData({...formData, url: e.target.value})}
-                                            className="w-full bg-white dark:bg-neutral-900 border-2 border-black p-3 text-sm font-bold outline-none focus:shadow-neo transition-shadow"
-                                            placeholder="https://..."
-                                          />
-                                          <button 
-                                            onClick={() => setFormData({...formData, content: 'Analyzed content would go here...'})} 
-                                            className="text-xs font-bold text-blue-600 hover:underline mt-1 uppercase"
-                                          >
-                                              [Simulate Fetch]
-                                          </button>
+                                          <div className="flex gap-2">
+                                            <input 
+                                                type="text" 
+                                                value={formData.url || ''}
+                                                onChange={(e) => setFormData({...formData, url: e.target.value})}
+                                                className="flex-1 bg-white dark:bg-neutral-900 border-2 border-black p-3 text-sm font-bold outline-none focus:shadow-neo transition-shadow"
+                                                placeholder="https://..."
+                                            />
+                                            <button 
+                                                onClick={handleFetchUrl} 
+                                                disabled={!formData.url || isFetchingUrl}
+                                                className="bg-blue-500 text-white px-4 py-2 font-black border-2 border-black shadow-neo-sm hover:bg-blue-600 disabled:bg-gray-400 uppercase text-xs"
+                                            >
+                                                {isFetchingUrl ? <i className="fa-solid fa-spinner fa-spin"></i> : 'FETCH'}
+                                            </button>
+                                          </div>
                                       </div>
                                   )}
 

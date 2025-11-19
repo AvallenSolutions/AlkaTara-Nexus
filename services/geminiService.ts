@@ -14,6 +14,12 @@ const getApiKey = (): string | undefined => {
     }
 };
 
+declare global {
+    interface Window {
+        mammoth: any;
+    }
+}
+
 const formatHistory = (messages: Message[]): Content[] => {
   const recentMessages = messages.length > MAX_HISTORY_LENGTH 
     ? messages.slice(messages.length - MAX_HISTORY_LENGTH) 
@@ -284,6 +290,44 @@ export const autoFormatKnowledge = async (rawText: string): Promise<{ title: str
     } catch (error) { return null; }
 };
 
+export const analyzeUrl = async (url: string): Promise<{ title: string, summary: string, category: string } | null> => {
+    try {
+        const apiKey = getApiKey();
+        if (!apiKey) return null;
+        const ai = new GoogleGenAI({ apiKey: apiKey });
+        
+        const prompt = `Visit the following URL: ${url}. 
+        Read the content of the website carefully.
+        Then, generate a JSON response with:
+        1. 'title': A suitable title for a knowledge base entry.
+        2. 'category': One of [STRATEGY, KPI, LEGAL, PRODUCT, OTHER].
+        3. 'summary': A detailed summary of the page content suitable for a business knowledge base.`;
+
+        const response = (await retryWithBackoff(() => ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: prompt,
+            config: {
+                tools: [{ googleSearch: {} }],
+                responseMimeType: 'application/json',
+                responseSchema: {
+                    type: Type.OBJECT,
+                    properties: {
+                        title: { type: Type.STRING },
+                        summary: { type: Type.STRING },
+                        category: { type: Type.STRING }
+                    },
+                    required: ['title', 'summary', 'category']
+                }
+            }
+        }))) as GenerateContentResponse;
+
+        return response.text ? JSON.parse(response.text) : null;
+    } catch (error) {
+        console.error("URL Analysis failed:", error);
+        return null;
+    }
+};
+
 export const analyzeFile = async (base64Data: string, mimeType: string): Promise<{ title: string, summary: string, category: string } | null> => {
     try {
         const apiKey = getApiKey();
@@ -291,11 +335,30 @@ export const analyzeFile = async (base64Data: string, mimeType: string): Promise
         const ai = new GoogleGenAI({ apiKey: apiKey });
         const prompt = `Analyze for AlkaTara. Identify type, summarize, categorize (STRATEGY, KPI, LEGAL, PRODUCT, OTHER).`;
         
+        let parts: Part[] = [];
+
+        // Special handling for DOCX using client-side text extraction
+        if (mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+            if (!window.mammoth) throw new Error("Mammoth library not loaded");
+            
+            // Convert base64 to ArrayBuffer
+            const binaryString = atob(base64Data);
+            const bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+            }
+            
+            const result = await window.mammoth.extractRawText({ arrayBuffer: bytes.buffer });
+            const extractedText = result.value;
+            parts = [{ text: `Extracted Document Content:\n${extractedText}` }, { text: prompt }];
+        } else {
+            // Default handling for PDF, Images, etc.
+            parts = [ { inlineData: { mimeType, data: base64Data } }, { text: prompt } ];
+        }
+        
         const response = (await retryWithBackoff(() => ai.models.generateContent({
             model: 'gemini-2.5-flash',
-            contents: {
-                parts: [ { inlineData: { mimeType, data: base64Data } }, { text: prompt } ]
-            },
+            contents: { parts },
             config: {
                 responseMimeType: 'application/json',
                 responseSchema: {
@@ -310,7 +373,10 @@ export const analyzeFile = async (base64Data: string, mimeType: string): Promise
             }
         }))) as GenerateContentResponse;
         return response.text ? JSON.parse(response.text) : null;
-    } catch (error) { return null; }
+    } catch (error) { 
+        console.error("File analysis failed:", error);
+        return null; 
+    }
 };
 
 // --- AUDIO UTILS ---
